@@ -8,9 +8,10 @@ const DEFAULT_LOCAL_DATA_DIR = path.join(process.cwd(), ".data");
 const DEFAULT_SERVERLESS_DATA_DIR = "/tmp/stone-river-mortgage";
 const ALLOW_DEFAULT_SEEDED_CREDENTIALS_ENV =
   "DAILY_PRICING_ALLOW_DEFAULT_SEEDED_CREDENTIALS";
+type EnvMap = Record<string, string | undefined>;
 
 export function resolveDailyPricingDataDir(
-  env: NodeJS.ProcessEnv = process.env
+  env: EnvMap = process.env
 ): string {
   const configuredDir = env.DAILY_PRICING_DATA_DIR?.trim();
   if (configuredDir) {
@@ -168,7 +169,7 @@ export function seededCredentialsUsingDefaults(): boolean {
 }
 
 export function getDailyPricingAuthWarning(
-  env: NodeJS.ProcessEnv = process.env
+  env: EnvMap = process.env
 ): string | null {
   const isProduction = env.NODE_ENV === "production";
   const allowDefaultCredentials =
