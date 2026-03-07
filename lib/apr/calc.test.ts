@@ -38,4 +38,19 @@ describe("APR calculation parity", () => {
 
     expect(result.aprAnnual).toBeCloseTo(0.0567378673, 8);
   });
+
+  it("computes APR# then APR% using principal and interest payment", () => {
+    const result = calculateAprAnnual({
+      termMonths: 360,
+      noteRateAnnual: 0.05625,
+      loanAmount: 525000,
+      discountPointFactor: 0.933,
+      underwritingFee: 1250,
+      prePaidInterest: 80.91,
+      principalAndInterest: 3022.2
+    });
+
+    expect(result.amountFinanced).toBeCloseTo(518770.84, 2);
+    expect(result.aprAnnual * 100).toBeCloseTo(5.734, 3);
+  });
 });

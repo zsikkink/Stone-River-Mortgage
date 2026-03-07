@@ -2,9 +2,12 @@ export type AprCalculationInput = {
   termMonths: number;
   noteRateAnnual: number;
   loanAmount: number;
-  pointsPercent: number;
+  pointsPercent?: number;
+  discountPointFactor?: number;
   underwritingFee: number;
-  perDiemDays: number;
+  perDiemDays?: number;
+  prePaidInterest?: number;
+  principalAndInterest?: number;
 };
 
 export type AprCalculationResult = {
@@ -12,6 +15,7 @@ export type AprCalculationResult = {
   pointsFee: number;
   perDiemInterest: number;
   amountFinanced: number;
+  aprNumber: number;
   aprAnnual: number;
   aprPercent: string;
 };
@@ -110,16 +114,32 @@ export function calculateMonthlyPayment(
 export function calculateAprAnnual(
   input: AprCalculationInput
 ): AprCalculationResult {
-  const payment = calculateMonthlyPayment(
+  const calculatedPayment = calculateMonthlyPayment(
     input.noteRateAnnual,
     input.termMonths,
     input.loanAmount
   );
+  const payment =
+    typeof input.principalAndInterest === "number" &&
+    Number.isFinite(input.principalAndInterest) &&
+    input.principalAndInterest > 0
+      ? input.principalAndInterest
+      : calculatedPayment;
 
-  const pointsFee = input.loanAmount * (input.pointsPercent / 100);
-  const perDiemDailyInterest =
-    (input.loanAmount * input.noteRateAnnual) / 365;
-  const perDiemInterest = input.perDiemDays * perDiemDailyInterest;
+  const discountPointPercent =
+    typeof input.discountPointFactor === "number" &&
+    Number.isFinite(input.discountPointFactor)
+      ? input.discountPointFactor
+      : input.pointsPercent ?? 0;
+  const pointsFee = input.loanAmount * (discountPointPercent / 100);
+
+  const perDiemInterest =
+    typeof input.prePaidInterest === "number" &&
+    Number.isFinite(input.prePaidInterest) &&
+    input.prePaidInterest >= 0
+      ? input.prePaidInterest
+      : (input.perDiemDays ?? 0) *
+        ((input.loanAmount * input.noteRateAnnual) / 365);
 
   const amountFinanced =
     input.loanAmount - pointsFee - input.underwritingFee - perDiemInterest;
@@ -136,6 +156,7 @@ export function calculateAprAnnual(
     pointsFee,
     perDiemInterest,
     amountFinanced,
+    aprNumber: amountFinanced,
     aprAnnual,
     aprPercent: formatAprPercent(aprAnnual)
   };

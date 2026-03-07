@@ -588,9 +588,10 @@ export async function POST(request: Request) {
       termMonths: parseLoanTermMonths(loanTerm),
       noteRateAnnual: interestRate / 100,
       loanAmount,
-      pointsPercent: discountPointFactor * 100,
+      discountPointFactor,
       underwritingFee,
-      perDiemDays: monthEndInterestDays
+      prePaidInterest: monthEndInterest,
+      principalAndInterest: monthlyPrincipalAndInterest
     });
     const apr = aprCalculation.aprAnnual * 100;
 
