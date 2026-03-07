@@ -503,11 +503,6 @@ export function DailyPricingPage() {
             />
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Daily Pricing
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">Sign in to continue.</p>
-
           {errorMessage ? (
             <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
               {errorMessage}
