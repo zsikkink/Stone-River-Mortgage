@@ -1105,18 +1105,20 @@ export async function POST(request: Request) {
     );
 
     if (equalHousingLogo) {
-      const maxLogoWidth = 72;
-      const maxLogoHeight = 36;
+      const maxLogoWidth = 84;
+      const maxLogoHeight = 42;
       const logoScale = Math.min(
         maxLogoWidth / equalHousingLogo.width,
         maxLogoHeight / equalHousingLogo.height
       );
       const logoWidth = equalHousingLogo.width * logoScale;
       const logoHeight = equalHousingLogo.height * logoScale;
+      const ratesUpdatedLineY = footerTopY - footerLineGap * 4;
+      const ratesUpdatedLineBottomY = ratesUpdatedLineY - 1.5;
 
       page.drawImage(equalHousingLogo, {
         x: pageWidth - margin - logoWidth,
-        y: 14,
+        y: ratesUpdatedLineBottomY,
         width: logoWidth,
         height: logoHeight
       });
