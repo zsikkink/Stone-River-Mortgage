@@ -119,6 +119,13 @@ const coreNumericFields: Array<{
     hint: "Discount points amount = Loan Amount x Discount Point Factor. Any numeric value is allowed."
   },
   {
+    key: "propertyTaxAnnualRate",
+    label: "Property Tax Annual Rate (Fallback)",
+    step: "0.0001",
+    min: "0",
+    hint: "Used only when county property tax lookup does not return an annual tax amount."
+  },
+  {
     key: "homeownersInsuranceRate",
     label: "Homeowners Insurance Annual Rate",
     step: "0.0001",
@@ -153,6 +160,11 @@ const feeFields: Array<{
   label: string;
   hint: string;
 }> = [
+  {
+    key: "appraisalFee",
+    label: "Appraisal Fee",
+    hint: "Through April 2026 the PDF currently overrides this line to $0 via promo logic."
+  },
   {
     key: "underwritingFee",
     label: "Underwriting Fee",
@@ -548,8 +560,7 @@ export function DailyPricingPage() {
           Daily Pricing
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          Update all transaction summary rates, fees, and footer copy from one
-          place.
+          Update the settings that drive generated transaction summary PDFs.
         </p>
 
         {errorMessage ? (
@@ -660,6 +671,20 @@ export function DailyPricingPage() {
             ) : null}
 
             <form className="space-y-8" onSubmit={handleSavePricing}>
+              <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                <p className="font-semibold text-slate-800">
+                  How these settings affect the PDF
+                </p>
+                <p className="mt-1">
+                  Changes saved here are used by the PDF generator for interest rate, APR,
+                  discount points, insurance estimate, fee lines, and footer text.
+                </p>
+                <p className="mt-1">
+                  Mortgage insurance uses fixed factor buckets from down payment %, and title
+                  premiums are calculated by the MN title policy calculator.
+                </p>
+              </section>
+
               <section>
                 <h2 className="text-lg font-semibold text-slate-900">
                   Core Rates and Assumptions
@@ -723,8 +748,8 @@ export function DailyPricingPage() {
               <section>
                 <h2 className="text-lg font-semibold text-slate-900">Fees</h2>
                 <p className="mt-1 text-xs text-slate-600">
-                  Appraisal and title policy lines currently follow fixed PDF rules and are
-                  not editable in this panel.
+                  Title policy lines are calculated by the title premium engine and are not
+                  editable in this panel.
                 </p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   {feeFields.map((field) => (
