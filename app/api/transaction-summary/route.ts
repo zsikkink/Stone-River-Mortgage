@@ -695,8 +695,8 @@ export async function POST(request: Request) {
     const headerTextX = margin;
 
     if (logoImage) {
-      const maxLogoWidth = 172;
-      const maxLogoHeight = 56;
+      const maxLogoWidth = 186;
+      const maxLogoHeight = 62;
       const logoScale = Math.min(
         maxLogoWidth / logoImage.width,
         maxLogoHeight / logoImage.height
@@ -1070,7 +1070,7 @@ export async function POST(request: Request) {
 
     const pricingLastUpdatedText = pricingConfig.lastUpdatedAt
       ? new Date(pricingConfig.lastUpdatedAt).toLocaleDateString("en-US", {
-          month: "short",
+          month: "long",
           day: "numeric",
           year: "numeric"
         })
