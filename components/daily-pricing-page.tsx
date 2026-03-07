@@ -755,8 +755,12 @@ export function DailyPricingPage() {
 
               <section>
                 <h2 className="text-lg font-semibold text-slate-900">
-                  Footer Text
+                  Footer Text (PDF Source of Truth)
                 </h2>
+                <p className="mt-1 text-xs text-slate-600">
+                  Editable footer lines currently used by the PDF generator:
+                  Estimated Charges Line and Pricing Updated Prefix.
+                </p>
                 <div className="mt-4 grid gap-4">
                   {footerFields.map((field) => (
                     <div key={field.key}>
@@ -779,6 +783,19 @@ export function DailyPricingPage() {
                       <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
                     </div>
                   ))}
+                </div>
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                  <p className="font-semibold text-slate-800">
+                    Fixed PDF footer lines (not editable in this panel):
+                  </p>
+                  <p className="mt-1">
+                    Estimate assumes: 780+ credit score, single family residence, and owner
+                    occupied
+                  </p>
+                  <p className="mt-1">
+                    Stone River Mortgage LLC nmls# 2090973, Mike Sikkink nmls# 345256
+                  </p>
+                  <p className="mt-1">HOA dues, if any, are paid directly to the HOA</p>
                 </div>
               </section>
 
