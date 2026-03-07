@@ -48,10 +48,22 @@ type PricingConfig = EditablePricingConfig & {
   lastUpdatedBy: string | null;
 };
 
+type PricingAnalytics = {
+  pdfGeneratedCount: number;
+  propertyTaxLookupCount: number;
+  propertyTaxLookupCountByCounty: Record<string, number>;
+  propertyTaxLookupNonMetroCount: number;
+  propertyTaxCurrentOrPreviousYearRecordFoundCount: number;
+  currentYear: number;
+  previousYear: number;
+  currentOrPreviousYearSuccessRate: number | null;
+};
+
 type PricingResponse = {
   authenticated: boolean;
   userEmail: string | null;
   pricing: PricingConfig;
+  analytics?: PricingAnalytics;
   authWarning?: string | null;
   storage?: {
     dataDir: string;
@@ -298,6 +310,7 @@ export function DailyPricingPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
+  const [analytics, setAnalytics] = useState<PricingAnalytics | null>(null);
   const [draftPricing, setDraftPricing] = useState<EditablePricingConfig | null>(
     null
   );
@@ -323,6 +336,7 @@ export function DailyPricingPage() {
       setAuthenticated(data.authenticated);
       setUserEmail(data.userEmail);
       setPricing(data.pricing);
+      setAnalytics(data.analytics ?? null);
       setDraftPricing(toEditablePricing(data.pricing));
       setWarningMessage(data.authWarning || null);
 
@@ -335,6 +349,7 @@ export function DailyPricingPage() {
       }
     } catch {
       setErrorMessage("Could not load pricing settings.");
+      setAnalytics(null);
     } finally {
       setLoading(false);
     }
@@ -560,6 +575,56 @@ export function DailyPricingPage() {
                 Sign out
               </button>
             </div>
+
+            {analytics ? (
+              <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Activity
+                </h2>
+                <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                  <p>PDFs generated: {analytics.pdfGeneratedCount}</p>
+                  <p>
+                    Property tax lookups: {analytics.propertyTaxLookupCount}
+                  </p>
+                  <p>
+                    Record success ({analytics.currentYear}/{analytics.previousYear}):{" "}
+                    {analytics.propertyTaxCurrentOrPreviousYearRecordFoundCount} /{" "}
+                    {analytics.propertyTaxLookupCount}{" "}
+                    {typeof analytics.currentOrPreviousYearSuccessRate === "number"
+                      ? `(${(analytics.currentOrPreviousYearSuccessRate * 100).toFixed(1)}%)`
+                      : "(n/a)"}
+                  </p>
+                  <p>
+                    Non-metro county lookups:{" "}
+                    {analytics.propertyTaxLookupNonMetroCount}
+                  </p>
+                </div>
+
+                <div className="mt-3">
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Property Tax Lookups by County
+                  </h3>
+                  {Object.keys(analytics.propertyTaxLookupCountByCounty).length ===
+                  0 ? (
+                    <p className="mt-1 text-sm text-slate-600">
+                      No lookup activity yet.
+                    </p>
+                  ) : (
+                    <ul className="mt-1 grid gap-x-6 gap-y-1 text-sm text-slate-700 sm:grid-cols-2">
+                      {Object.entries(analytics.propertyTaxLookupCountByCounty)
+                        .sort(([leftCounty], [rightCounty]) =>
+                          leftCounty.localeCompare(rightCounty)
+                        )
+                        .map(([county, count]) => (
+                          <li key={county}>
+                            {county}: {count}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+            ) : null}
 
             <form className="space-y-8" onSubmit={handleSavePricing}>
               <section>

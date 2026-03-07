@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getDailyPricingAuthWarning,
-  resolveDailyPricingDataDir
+  resolveDailyPricingDataDir,
+  wasCurrentOrPreviousYearRecordFound
 } from "./daily-pricing-store";
 
 describe("resolveDailyPricingDataDir", () => {
@@ -38,5 +39,37 @@ describe("getDailyPricingAuthWarning", () => {
     });
 
     expect(warning).toBeNull();
+  });
+});
+
+describe("wasCurrentOrPreviousYearRecordFound", () => {
+  it("returns true for county-retrieved current year", () => {
+    expect(
+      wasCurrentOrPreviousYearRecordFound({
+        resultType: "county_retrieved",
+        actualTaxYearUsed: 2026,
+        currentYear: 2026
+      })
+    ).toBe(true);
+  });
+
+  it("returns true for county-retrieved previous year", () => {
+    expect(
+      wasCurrentOrPreviousYearRecordFound({
+        resultType: "county_retrieved",
+        actualTaxYearUsed: 2025,
+        currentYear: 2026
+      })
+    ).toBe(true);
+  });
+
+  it("returns false for estimated results", () => {
+    expect(
+      wasCurrentOrPreviousYearRecordFound({
+        resultType: "estimated",
+        actualTaxYearUsed: 2026,
+        currentYear: 2026
+      })
+    ).toBe(false);
   });
 });

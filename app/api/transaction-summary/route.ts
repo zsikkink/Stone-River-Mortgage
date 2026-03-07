@@ -4,7 +4,10 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { NextResponse } from "next/server";
 import { calculateAprAnnual } from "@/lib/apr/calc";
 import { MINNESOTA_ADDRESS_ONLY_MESSAGE } from "@/lib/constants";
-import { getPricingConfig } from "@/lib/daily-pricing-store";
+import {
+  getPricingConfig,
+  recordTransactionSummaryGenerated
+} from "@/lib/daily-pricing-store";
 import { getLoanAmountBoundsMessage } from "@/lib/loanAmount";
 import { buildPropertyTaxLabels } from "@/lib/propertyTax/presentation";
 import { calculateTitlePremiums } from "@/lib/titlePremium/calc";
@@ -569,7 +572,7 @@ export async function POST(request: Request) {
         heading: "Lender Charges",
         rows: [
           {
-            label: `Discount Points (${discountPointFactor.toFixed(4)})`,
+            label: "Discount Points",
             value: discountPoints
           },
           { label: "Underwriting Fee", value: underwritingFee },
@@ -1087,6 +1090,15 @@ export async function POST(request: Request) {
     );
 
     const pdfBytes = await pdfDoc.save();
+
+    try {
+      await recordTransactionSummaryGenerated();
+    } catch (analyticsError) {
+      console.warn("Transaction summary analytics update failed", {
+        error:
+          analyticsError instanceof Error ? analyticsError.message : "unknown"
+      });
+    }
 
     return new NextResponse(pdfBytes, {
       status: 200,

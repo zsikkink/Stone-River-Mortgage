@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { MINNESOTA_ADDRESS_ONLY_MESSAGE } from "@/lib/constants";
+import { recordPropertyTaxLookup } from "@/lib/daily-pricing-store";
 import {
   computeAnnualPropertyTax,
   getAnnualPropertyTax
 } from "@/lib/propertyTax/calc";
 import { buildPropertyTaxApiResponse } from "@/lib/propertyTax/presentation";
+import {
+  isMetroPriorityCounty,
+  normalizeCountyName
+} from "@/lib/propertyTax/strategyRegistry";
 
 export const runtime = "nodejs";
 
@@ -69,6 +74,25 @@ export async function POST(request: Request) {
       purchasePrice: parsed.data.purchasePrice,
       taxYear: parsed.data.taxYear ?? null
     });
+
+    try {
+      const resolvedCounty = normalizeCountyName(
+        detailedEstimate.county ?? parsed.data.county ?? null
+      );
+      await recordPropertyTaxLookup({
+        county: resolvedCounty,
+        isMetroCounty: isMetroPriorityCounty(resolvedCounty),
+        resultType: detailedEstimate.result_type,
+        actualTaxYearUsed: detailedEstimate.actual_tax_year_used
+      });
+    } catch (analyticsError) {
+      console.warn("Property tax analytics update failed", {
+        error:
+          analyticsError instanceof Error
+            ? analyticsError.message
+            : "unknown"
+      });
+    }
 
     if (
       detailedEstimate.result_type === "unresolved" ||

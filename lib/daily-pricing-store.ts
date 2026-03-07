@@ -96,10 +96,27 @@ export type PricingConfig = EditablePricingConfig & {
   lastUpdatedBy: string | null;
 };
 
+export type DailyPricingAnalytics = {
+  pdfGeneratedCount: number;
+  propertyTaxLookupCount: number;
+  propertyTaxLookupCountByCounty: Record<string, number>;
+  propertyTaxLookupNonMetroCount: number;
+  propertyTaxCurrentOrPreviousYearRecordFoundCount: number;
+};
+
+type PropertyTaxLookupRecordInput = {
+  county: string | null | undefined;
+  isMetroCounty: boolean;
+  resultType: "county_retrieved" | "estimated" | "unresolved";
+  actualTaxYearUsed: number | null | undefined;
+  currentYear?: number;
+};
+
 type PricingStore = {
   users: UserRecord[];
   sessions: SessionRecord[];
   pricing: PricingConfig;
+  analytics: DailyPricingAnalytics;
 };
 
 let inMemoryStoreFallback: PricingStore | null = null;
@@ -210,7 +227,18 @@ function defaultStore(): PricingStore {
       ...DEFAULT_PRICING,
       lastUpdatedAt: null,
       lastUpdatedBy: null
-    }
+    },
+    analytics: createDefaultAnalytics()
+  };
+}
+
+function createDefaultAnalytics(): DailyPricingAnalytics {
+  return {
+    pdfGeneratedCount: 0,
+    propertyTaxLookupCount: 0,
+    propertyTaxLookupCountByCounty: {},
+    propertyTaxLookupNonMetroCount: 0,
+    propertyTaxCurrentOrPreviousYearRecordFoundCount: 0
   };
 }
 
@@ -249,6 +277,60 @@ function toStringWithFallback(value: unknown, fallback: string): string {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : fallback;
+}
+
+function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
+  const source = isObject(input) ? input : {};
+  const byCountySource = isObject(source.propertyTaxLookupCountByCounty)
+    ? source.propertyTaxLookupCountByCounty
+    : {};
+
+  const byCounty: Record<string, number> = {};
+  for (const [key, value] of Object.entries(byCountySource)) {
+    const county = key.trim();
+    if (!county) {
+      continue;
+    }
+
+    const count = Number(value);
+    if (!Number.isFinite(count) || count < 0) {
+      continue;
+    }
+
+    byCounty[county] = Math.floor(count);
+  }
+
+  return {
+    pdfGeneratedCount: Math.floor(
+      toNumberWithFallback({
+        value: source.pdfGeneratedCount,
+        fallback: 0,
+        min: 0
+      })
+    ),
+    propertyTaxLookupCount: Math.floor(
+      toNumberWithFallback({
+        value: source.propertyTaxLookupCount,
+        fallback: 0,
+        min: 0
+      })
+    ),
+    propertyTaxLookupCountByCounty: byCounty,
+    propertyTaxLookupNonMetroCount: Math.floor(
+      toNumberWithFallback({
+        value: source.propertyTaxLookupNonMetroCount,
+        fallback: 0,
+        min: 0
+      })
+    ),
+    propertyTaxCurrentOrPreviousYearRecordFoundCount: Math.floor(
+      toNumberWithFallback({
+        value: source.propertyTaxCurrentOrPreviousYearRecordFoundCount,
+        fallback: 0,
+        min: 0
+      })
+    )
+  };
 }
 
 function normalizeStoredPricing(input: unknown): PricingConfig {
@@ -476,7 +558,8 @@ async function ensureStore(): Promise<PricingStore> {
     const store: PricingStore = {
       users: parsed.users,
       sessions: parsed.sessions,
-      pricing: normalizeStoredPricing(parsed.pricing)
+      pricing: normalizeStoredPricing(parsed.pricing),
+      analytics: normalizeStoredAnalytics(parsed.analytics)
     };
 
     const seededEmail = normalizeEmail(SEEDED_EMAIL);
@@ -689,6 +772,80 @@ export function parsePricingConfigUpdate(input: unknown): EditablePricingConfig 
 export async function getPricingConfig(): Promise<PricingConfig> {
   const store = await ensureStore();
   return store.pricing;
+}
+
+export async function getDailyPricingAnalytics(): Promise<DailyPricingAnalytics> {
+  const store = await ensureStore();
+  return store.analytics;
+}
+
+function normalizeAnalyticsCounty(county: string | null | undefined): string {
+  if (!county || !county.trim()) {
+    return "Unknown";
+  }
+
+  return county
+    .trim()
+    .replace(/\s+County$/i, "")
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export function wasCurrentOrPreviousYearRecordFound(
+  input: Pick<
+    PropertyTaxLookupRecordInput,
+    "resultType" | "actualTaxYearUsed" | "currentYear"
+  >
+): boolean {
+  if (input.resultType !== "county_retrieved") {
+    return false;
+  }
+
+  if (
+    typeof input.actualTaxYearUsed !== "number" ||
+    !Number.isFinite(input.actualTaxYearUsed)
+  ) {
+    return false;
+  }
+
+  const currentYear = input.currentYear ?? new Date().getFullYear();
+  const year = Math.floor(input.actualTaxYearUsed);
+  return year === currentYear || year === currentYear - 1;
+}
+
+export async function recordTransactionSummaryGenerated(): Promise<void> {
+  const store = await ensureStore();
+  store.analytics.pdfGeneratedCount += 1;
+  await writeStore(store);
+}
+
+export async function recordPropertyTaxLookup(
+  input: PropertyTaxLookupRecordInput
+): Promise<void> {
+  const store = await ensureStore();
+  store.analytics.propertyTaxLookupCount += 1;
+
+  const normalizedCounty = normalizeAnalyticsCounty(input.county);
+  store.analytics.propertyTaxLookupCountByCounty[normalizedCounty] =
+    (store.analytics.propertyTaxLookupCountByCounty[normalizedCounty] ?? 0) + 1;
+
+  if (!input.isMetroCounty) {
+    store.analytics.propertyTaxLookupNonMetroCount += 1;
+  }
+
+  if (
+    wasCurrentOrPreviousYearRecordFound({
+      resultType: input.resultType,
+      actualTaxYearUsed: input.actualTaxYearUsed,
+      currentYear: input.currentYear
+    })
+  ) {
+    store.analytics.propertyTaxCurrentOrPreviousYearRecordFoundCount += 1;
+  }
+
+  await writeStore(store);
 }
 
 export async function loginWithCredentials(
