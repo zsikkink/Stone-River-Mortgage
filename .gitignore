@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+npm-debug.log*
+.DS_Store
+*.tsbuildinfo
+.data
+.env.local
+.env.*.local
+.next.stale.*
+
+# Local certificate/debug artifacts (do not commit)
+*.pem
+*.cer
+*.crt
