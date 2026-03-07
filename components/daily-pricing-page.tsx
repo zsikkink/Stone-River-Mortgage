@@ -675,9 +675,12 @@ export function DailyPricingPage() {
                       </label>
                       <input
                         id={`pricing-${field.key}`}
-                        type="number"
-                        step={field.step}
-                        min={field.min}
+                        type={field.key === "discountPointFactor" ? "text" : "number"}
+                        inputMode={
+                          field.key === "discountPointFactor" ? "decimal" : undefined
+                        }
+                        step={field.key === "discountPointFactor" ? undefined : field.step}
+                        min={field.key === "discountPointFactor" ? undefined : field.min}
                         required
                         value={draftPricing[field.key]}
                         onChange={(event) =>
