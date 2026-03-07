@@ -683,10 +683,6 @@ export function MarketingPage() {
                           may vary based on assessed value, homestead status, and local
                           levies.
                         </p>
-                        <p className="mt-1 text-xs text-slate-600">
-                          Minnesota property taxes are often listed by payable year and may
-                          lag market value.
-                        </p>
                       </div>
                     );
                   })()

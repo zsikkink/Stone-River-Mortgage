@@ -1,7 +1,7 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useEffect, useState } from "react";
-import { TitlePremiumCalculator } from "@/components/title-premium-calculator";
 
 type PricingFees = {
   underwritingFee: number;
@@ -477,44 +477,55 @@ export function DailyPricingPage() {
     }
   };
 
-  return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-subtle sm:p-8">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-          Daily Pricing
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Update all transaction summary rates, fees, and footer copy from one
-          place.
-        </p>
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-subtle">
+          <p className="text-sm text-slate-600">Loading...</p>
+        </div>
+      </main>
+    );
+  }
 
-        {loading ? <p className="mt-6 text-sm text-slate-600">Loading...</p> : null}
+  if (!authenticated) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-subtle">
+          <div className="mx-auto mb-6 max-w-[260px]">
+            <Image
+              src="/logo.png"
+              alt="Stone River Mortgage logo"
+              width={1200}
+              height={400}
+              priority
+              className="h-auto w-full object-contain"
+              sizes="260px"
+            />
+          </div>
 
-        {errorMessage ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-            {errorMessage}
-          </p>
-        ) : null}
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Daily Pricing
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">Sign in to continue.</p>
 
-        {successMessage ? (
-          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
-            {successMessage}
-          </p>
-        ) : null}
+          {errorMessage ? (
+            <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+              {errorMessage}
+            </p>
+          ) : null}
 
-        {warningMessage ? (
-          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-            {warningMessage}
-          </p>
-        ) : null}
+          {successMessage ? (
+            <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+              {successMessage}
+            </p>
+          ) : null}
 
-        {pricing ? (
-          <p className="mt-4 text-sm text-slate-600">
-            Last updated: {formatLastUpdated(pricing)}
-          </p>
-        ) : null}
+          {warningMessage ? (
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+              {warningMessage}
+            </p>
+          ) : null}
 
-        {!loading && !authenticated ? (
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             <div>
               <label
@@ -555,14 +566,52 @@ export function DailyPricingPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex items-center justify-center rounded-xl bg-slateBlue px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#17314f] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-slateBlue px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#17314f] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
             >
               {submitting ? "Signing in..." : "Sign in"}
             </button>
           </form>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-subtle sm:p-8">
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+          Daily Pricing
+        </h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Update all transaction summary rates, fees, and footer copy from one
+          place.
+        </p>
+
+        {errorMessage ? (
+          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {errorMessage}
+          </p>
         ) : null}
 
-        {!loading && authenticated && draftPricing ? (
+        {successMessage ? (
+          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+            {successMessage}
+          </p>
+        ) : null}
+
+        {warningMessage ? (
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            {warningMessage}
+          </p>
+        ) : null}
+
+        {pricing ? (
+          <p className="mt-4 text-sm text-slate-600">
+            Last updated: {formatLastUpdated(pricing)}
+          </p>
+        ) : null}
+
+        {draftPricing ? (
           <div className="mt-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               <span>Signed in as {userEmail}</span>
@@ -753,20 +802,6 @@ export function DailyPricingPage() {
           </div>
         ) : null}
       </div>
-
-      <section className="mt-8">
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-          MN Title Insurance Premiums
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Estimate owner and lender title premiums using configurable Minnesota
-          tier defaults.
-        </p>
-
-        <div className="mt-4">
-          <TitlePremiumCalculator />
-        </div>
-      </section>
     </main>
   );
 }

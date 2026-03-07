@@ -426,6 +426,20 @@ async function maybeLoadLogo(pdfDoc: PDFDocument) {
   }
 }
 
+async function maybeLoadEqualHousingLogo(pdfDoc: PDFDocument) {
+  try {
+    const logoPath = path.join(
+      process.cwd(),
+      "public",
+      "equal-housing-lender-logo-png-transparent.png"
+    );
+    const bytes = await fs.readFile(logoPath);
+    return await pdfDoc.embedPng(bytes);
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const payload: unknown = await request.json();
@@ -648,6 +662,7 @@ export async function POST(request: Request) {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontBoldItalic = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
     const logoImage = await maybeLoadLogo(pdfDoc);
+    const equalHousingLogo = await maybeLoadEqualHousingLogo(pdfDoc);
 
     const pageWidth = 612;
     const pageHeight = 792;
@@ -1088,6 +1103,24 @@ export async function POST(request: Request) {
         color: textColor
       }
     );
+
+    if (equalHousingLogo) {
+      const maxLogoWidth = 72;
+      const maxLogoHeight = 36;
+      const logoScale = Math.min(
+        maxLogoWidth / equalHousingLogo.width,
+        maxLogoHeight / equalHousingLogo.height
+      );
+      const logoWidth = equalHousingLogo.width * logoScale;
+      const logoHeight = equalHousingLogo.height * logoScale;
+
+      page.drawImage(equalHousingLogo, {
+        x: pageWidth - margin - logoWidth,
+        y: 14,
+        width: logoWidth,
+        height: logoHeight
+      });
+    }
 
     const pdfBytes = await pdfDoc.save();
 
