@@ -116,7 +116,7 @@ const coreNumericFields: Array<{
     key: "discountPointFactor",
     label: "Discount Point Factor",
     step: "any",
-    hint: "Discount points amount = Loan Amount x Discount Point Factor. Any numeric value is allowed."
+    hint: "Entered as a percent (example: 0.933 means 0.933%). Discount points amount = (Loan Amount x Discount Point Factor) / 100."
   },
   {
     key: "propertyTaxAnnualRate",

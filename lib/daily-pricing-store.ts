@@ -153,7 +153,8 @@ let hasLoggedInMemoryStoreFallback = false;
 
 const DEFAULT_PRICING: EditablePricingConfig = {
   interestRate: 5.625,
-  discountPointFactor: 0.00933,
+  // Percent style entry (0.933 => 0.933%).
+  discountPointFactor: 0.933,
   aprSpread: 0.118,
   loanTerm: "30-YR Fixed",
   propertyTaxAnnualRate: 0.0139,

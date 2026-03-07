@@ -543,8 +543,9 @@ export async function POST(request: Request) {
       mortgageInsuranceMonthly +
       hoaMonthly;
 
+    // discountPointFactor is entered as a percent value (e.g. 0.933 => 0.933%).
     const discountPointFactor = pricingConfig.discountPointFactor;
-    const discountPoints = loanAmount * discountPointFactor;
+    const discountPoints = (loanAmount * discountPointFactor) / 100;
     const underwritingFee = pricingConfig.fees.underwritingFee;
     const appraisalPromoActive = new Date() < APPRAISAL_PROMO_END_EXCLUSIVE;
     const appraisalFee = appraisalPromoActive ? 0 : pricingConfig.fees.appraisalFee;
