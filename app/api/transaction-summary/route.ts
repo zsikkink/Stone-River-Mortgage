@@ -42,6 +42,7 @@ type CostGroup = {
 const APPRAISAL_PROMO_END_EXCLUSIVE = new Date("2026-05-01T00:00:00-05:00");
 const APPRAISAL_PROMO_DESCRIPTION =
   "Stone River Mortgage will pay up to $600 in appraisal fees.";
+const HOMEOWNERS_INSURANCE_MONTHLY_REDUCTION = 50;
 const FOOTER_DISCLAIMER_HOA =
   "HOA dues, if any, are paid directly to the HOA";
 const FOOTER_COMPANY_NMLS_LINE =
@@ -521,9 +522,12 @@ export async function POST(request: Request) {
       actualYearUsed: propertyTaxActualYearUsed,
       yearMatchStatus: propertyTaxYearMatchStatus
     });
-    const homeownersInsuranceMonthly = roundDownToNearest(
-      (purchasePrice * pricingConfig.homeownersInsuranceRate) / 12,
-      pricingConfig.homeownersInsuranceRoundDownTo
+    const homeownersInsuranceMonthly = Math.max(
+      0,
+      roundDownToNearest(
+        (purchasePrice * pricingConfig.homeownersInsuranceRate) / 12,
+        pricingConfig.homeownersInsuranceRoundDownTo
+      ) - HOMEOWNERS_INSURANCE_MONTHLY_REDUCTION
     );
     const mortgageInsuranceFactor = getMortgageInsuranceFactor(
       payload.downPaymentPercent
