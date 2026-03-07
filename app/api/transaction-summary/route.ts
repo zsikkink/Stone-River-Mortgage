@@ -41,7 +41,7 @@ type CostGroup = {
 
 const APPRAISAL_PROMO_END_EXCLUSIVE = new Date("2026-05-01T00:00:00-05:00");
 const APPRAISAL_PROMO_DESCRIPTION =
-  "Stone River Mortgage will pay up to $600 in appraisal fees.";
+  "Stone River Mortgage will pay up to $600 in appraisal fees";
 const HOMEOWNERS_INSURANCE_MONTHLY_REDUCTION = 50;
 const FOOTER_DISCLAIMER_HOA =
   "HOA dues, if any, are paid directly to the HOA";
@@ -651,7 +651,7 @@ export async function POST(request: Request) {
             value: firstYearInsurance
           },
           {
-            label: `Interest From Closing Date on ${closingDateLabel} Through Month End.`,
+            label: `Interest From Closing Date on ${closingDateLabel} Through Month End`,
             value: monthEndInterest
           }
         ]
