@@ -111,6 +111,14 @@ export type PricingConfig = EditablePricingConfig & {
   lastUpdatedBy: string | null;
 };
 
+export type PricingRateHistoryRecord = {
+  id: string;
+  interestRate: number;
+  discountPointFactor: number;
+  changedAt: string;
+  changedBy: string | null;
+};
+
 export type DailyPricingAnalytics = {
   pdfGeneratedCount: number;
   propertyTaxLookupCount: number;
@@ -145,6 +153,7 @@ type PricingStore = {
   users: UserRecord[];
   sessions: SessionRecord[];
   pricing: PricingConfig;
+  pricingRateHistory: PricingRateHistoryRecord[];
   analytics: DailyPricingAnalytics;
 };
 
@@ -268,6 +277,7 @@ function defaultStore(): PricingStore {
       lastUpdatedAt: null,
       lastUpdatedBy: null
     },
+    pricingRateHistory: [],
     analytics: createDefaultAnalytics()
   };
 }
@@ -445,6 +455,52 @@ function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
       })
     )
   };
+}
+
+function normalizeStoredPricingRateHistory(
+  input: unknown
+): PricingRateHistoryRecord[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const normalized: PricingRateHistoryRecord[] = [];
+  for (const entry of input) {
+    if (!isObject(entry)) {
+      continue;
+    }
+
+    const id =
+      typeof entry.id === "string" && entry.id.trim()
+        ? entry.id.trim()
+        : randomBytes(8).toString("hex");
+    const interestRate = Number(entry.interestRate);
+    const discountPointFactor = Number(entry.discountPointFactor);
+    const changedAt =
+      typeof entry.changedAt === "string" && entry.changedAt.trim()
+        ? entry.changedAt
+        : new Date(0).toISOString();
+    const changedBy =
+      typeof entry.changedBy === "string" && entry.changedBy.trim()
+        ? normalizeEmail(entry.changedBy)
+        : null;
+
+    if (!Number.isFinite(interestRate) || !Number.isFinite(discountPointFactor)) {
+      continue;
+    }
+
+    normalized.push({
+      id,
+      interestRate,
+      discountPointFactor,
+      changedAt,
+      changedBy
+    });
+  }
+
+  return normalized.sort((left, right) =>
+    left.changedAt < right.changedAt ? 1 : -1
+  );
 }
 
 function normalizeStoredPricing(input: unknown): PricingConfig {
@@ -744,6 +800,9 @@ async function readStoreFromKv(): Promise<PricingStore | null> {
     users: parsed.users,
     sessions: parsed.sessions,
     pricing: normalizeStoredPricing(parsed.pricing),
+    pricingRateHistory: normalizeStoredPricingRateHistory(
+      (parsed as Record<string, unknown>).pricingRateHistory
+    ),
     analytics: normalizeStoredAnalytics(parsed.analytics)
   };
 
@@ -799,6 +858,9 @@ async function ensureStore(): Promise<PricingStore> {
       users: parsed.users,
       sessions: parsed.sessions,
       pricing: normalizeStoredPricing(parsed.pricing),
+      pricingRateHistory: normalizeStoredPricingRateHistory(
+        (parsed as Record<string, unknown>).pricingRateHistory
+      ),
       analytics: normalizeStoredAnalytics(parsed.analytics)
     };
 
@@ -1011,6 +1073,13 @@ export function parsePricingConfigUpdate(input: unknown): EditablePricingConfig 
 export async function getPricingConfig(): Promise<PricingConfig> {
   const store = await ensureStore();
   return store.pricing;
+}
+
+export async function getPricingRateHistory(): Promise<PricingRateHistoryRecord[]> {
+  const store = await ensureStore();
+  return [...store.pricingRateHistory].sort((left, right) =>
+    left.changedAt < right.changedAt ? 1 : -1
+  );
 }
 
 export async function getDailyPricingAnalytics(): Promise<DailyPricingAnalytics> {
@@ -1280,11 +1349,26 @@ export async function updatePricingConfig(params: {
   assertDailyPricingAuthConfiguredForProduction();
 
   const store = await ensureStore();
+  const normalizedUpdatedBy = normalizeEmail(params.updatedBy);
+  const now = new Date().toISOString();
+  const ratesChanged =
+    store.pricing.interestRate !== params.pricing.interestRate ||
+    store.pricing.discountPointFactor !== params.pricing.discountPointFactor;
+
+  if (ratesChanged) {
+    store.pricingRateHistory.unshift({
+      id: randomBytes(12).toString("hex"),
+      interestRate: params.pricing.interestRate,
+      discountPointFactor: params.pricing.discountPointFactor,
+      changedAt: now,
+      changedBy: normalizedUpdatedBy
+    });
+  }
 
   store.pricing = {
     ...params.pricing,
-    lastUpdatedAt: new Date().toISOString(),
-    lastUpdatedBy: normalizeEmail(params.updatedBy)
+    lastUpdatedAt: now,
+    lastUpdatedBy: normalizedUpdatedBy
   };
 
   await writeStore(store);

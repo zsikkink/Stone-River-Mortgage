@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   DAILY_PRICING_AUTH_COOKIE,
+  getPricingRateHistory,
   parsePricingConfigUpdate,
   getSessionEmail,
   updatePricingConfig
@@ -37,8 +38,9 @@ export async function POST(request: NextRequest) {
       pricing: parsedPricing,
       updatedBy: userEmail
     });
+    const rateHistory = await getPricingRateHistory();
 
-    return NextResponse.json({ ok: true, pricing });
+    return NextResponse.json({ ok: true, pricing, rateHistory });
   } catch (error) {
     if (error instanceof Error && error.message) {
       const status = /login is disabled in production/i.test(error.message)

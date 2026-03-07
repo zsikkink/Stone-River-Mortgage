@@ -48,6 +48,14 @@ type PricingConfig = EditablePricingConfig & {
   lastUpdatedBy: string | null;
 };
 
+type PricingRateHistoryRecord = {
+  id: string;
+  interestRate: number;
+  discountPointFactor: number;
+  changedAt: string;
+  changedBy: string | null;
+};
+
 type PricingAnalytics = {
   pdfGeneratedCount: number;
   propertyTaxLookupCount: number;
@@ -77,6 +85,7 @@ type PricingResponse = {
   authenticated: boolean;
   userEmail: string | null;
   pricing: PricingConfig;
+  rateHistory?: PricingRateHistoryRecord[];
   analytics?: PricingAnalytics;
   authWarning?: string | null;
   storage?: {
@@ -281,11 +290,27 @@ function toNumber(rawValue: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatHistoryTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 export function DailyPricingPage() {
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
+  const [rateHistory, setRateHistory] = useState<PricingRateHistoryRecord[]>([]);
   const [analytics, setAnalytics] = useState<PricingAnalytics | null>(null);
   const [draftPricing, setDraftPricing] = useState<EditablePricingConfig | null>(
     null
@@ -312,6 +337,7 @@ export function DailyPricingPage() {
       setAuthenticated(data.authenticated);
       setUserEmail(data.userEmail);
       setPricing(data.pricing);
+      setRateHistory(data.rateHistory ?? []);
       setAnalytics(data.analytics ?? null);
       setDraftPricing(toEditablePricing(data.pricing));
       setWarningMessage(data.authWarning || null);
@@ -421,6 +447,7 @@ export function DailyPricingPage() {
       const payload = (await response.json()) as {
         error?: string;
         pricing?: PricingConfig;
+        rateHistory?: PricingRateHistoryRecord[];
       };
 
       if (!response.ok || !payload.pricing) {
@@ -429,6 +456,7 @@ export function DailyPricingPage() {
 
       setPricing(payload.pricing);
       setDraftPricing(toEditablePricing(payload.pricing));
+      setRateHistory(payload.rateHistory ?? []);
       setSuccessMessage("Pricing settings updated.");
     } catch (error) {
       const message =
@@ -832,6 +860,53 @@ export function DailyPricingPage() {
                 {submitting ? "Saving..." : "Save Pricing Settings"}
               </button>
             </form>
+
+            <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <h2 className="text-base font-semibold text-slate-900">
+                Interest Rate &amp; Discount Point History
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                A record is added when either the interest rate or discount point factor
+                changes.
+              </p>
+
+              {rateHistory.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-600">
+                  No recorded changes yet.
+                </p>
+              ) : (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-2 py-1.5">When</th>
+                        <th className="px-2 py-1.5">Interest Rate</th>
+                        <th className="px-2 py-1.5">Discount Point Factor</th>
+                        <th className="px-2 py-1.5">Updated By</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {rateHistory.map((entry) => (
+                        <tr key={entry.id}>
+                          <td className="px-2 py-1.5 text-slate-700">
+                            {formatHistoryTimestamp(entry.changedAt)}
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-700">
+                            {entry.interestRate.toFixed(3)}%
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-700">
+                            {entry.discountPointFactor}
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-700">
+                            {entry.changedBy || "unknown"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         ) : null}
       </div>

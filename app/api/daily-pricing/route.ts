@@ -3,6 +3,7 @@ import {
   DAILY_PRICING_AUTH_COOKIE,
   getDailyPricingAnalytics,
   getDailyPricingAuthWarning,
+  getPricingRateHistory,
   getDailyPricingStorageDiagnostics,
   getPricingConfig,
   getSessionEmail
@@ -13,6 +14,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   try {
     const pricing = await getPricingConfig();
+    const rateHistory = await getPricingRateHistory();
     const analytics = await getDailyPricingAnalytics();
     const token = request.cookies.get(DAILY_PRICING_AUTH_COOKIE)?.value ?? "";
     const userEmail = token ? await getSessionEmail(token) : null;
@@ -57,6 +59,7 @@ export async function GET(request: NextRequest) {
       authenticated: Boolean(userEmail),
       userEmail,
       pricing,
+      rateHistory,
       authWarning,
       storage: storageDiagnostics,
       analytics: {
