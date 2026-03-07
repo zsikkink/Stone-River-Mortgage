@@ -668,6 +668,7 @@ export async function POST(request: Request) {
     const pageHeight = 792;
     const margin = 38;
     const contentWidth = pageWidth - margin * 2;
+    const contentRightEdgeX = margin + contentWidth;
     const topOffset = 12;
 
     const textColor = rgb(0.11, 0.11, 0.11);
@@ -685,7 +686,7 @@ export async function POST(request: Request) {
       const logoWidth = logoImage.width * logoScale;
       const logoHeight = logoImage.height * logoScale;
       const logoY = pageHeight - 97 + topOffset;
-      const logoX = pageWidth - margin - logoWidth;
+      const logoX = contentRightEdgeX - logoWidth;
       const logoTopY = logoY + logoHeight;
       summaryTitleY = logoTopY - 16;
 
@@ -704,7 +705,7 @@ export async function POST(request: Request) {
       );
 
       page.drawText(fallbackLogoText, {
-        x: pageWidth - margin - fallbackLogoWidth,
+        x: contentRightEdgeX - fallbackLogoWidth,
         y: pageHeight - 78 + topOffset,
         size: fallbackLogoSize,
         font: fontBold,
@@ -1105,8 +1106,8 @@ export async function POST(request: Request) {
     );
 
     if (equalHousingLogo) {
-      const maxLogoWidth = 84;
-      const maxLogoHeight = 42;
+      const maxLogoWidth = 98;
+      const maxLogoHeight = 49;
       const logoScale = Math.min(
         maxLogoWidth / equalHousingLogo.width,
         maxLogoHeight / equalHousingLogo.height

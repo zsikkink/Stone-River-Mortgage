@@ -11,6 +11,8 @@ const APPLY_URL =
   "https://www.blink.mortgage/app/signup/p/stonerivermortgagellc/mikesikkink?campaign=StoneRiverMortgage";
 const PHONE_DISPLAY = "612.850.2018";
 const PHONE_LINK = "tel:+16128502018";
+const TRANSACTION_SUMMARY_PDF_FILENAME =
+  "Stone_River_Mortgage_Transaction_Summary.pdf";
 
 type DownPaymentOption = "5" | "10" | "15" | "20" | "25" | "custom";
 
@@ -489,14 +491,10 @@ export function MarketingPage() {
         return;
       }
 
-      const file = new File([previewBlob], "transaction-summary.pdf", {
+      const file = new File([previewBlob], TRANSACTION_SUMMARY_PDF_FILENAME, {
         type: "application/pdf"
       });
-      const fileShareData: ShareData = {
-        title: "Transaction Summary PDF",
-        text: "Stone River Mortgage Transaction Summary",
-        files: [file]
-      };
+      const fileShareData: ShareData = { files: [file] };
 
       if (
         typeof shareNavigator.canShare === "function" &&
@@ -506,14 +504,7 @@ export function MarketingPage() {
         return;
       }
 
-      const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
-      if (!opened) {
-        await shareNavigator.share({
-          title: "Transaction Summary PDF",
-          text: "Stone River Mortgage Transaction Summary",
-          url: window.location.href
-        });
-      }
+      window.open(previewUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
@@ -589,7 +580,7 @@ export function MarketingPage() {
                   </button>
                   <a
                     href={previewUrl}
-                    download="transaction-summary.pdf"
+                    download={TRANSACTION_SUMMARY_PDF_FILENAME}
                     className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 sm:w-auto"
                   >
                     Download PDF
