@@ -139,14 +139,7 @@ const coreNumericFields: Array<{
     label: "Homeowners Insurance Annual Rate",
     step: "0.0001",
     min: "0",
-    hint: "Insurance (est.) before rounding = Purchase Price x Homeowners Insurance Annual Rate / 12."
-  },
-  {
-    key: "homeownersInsuranceRoundDownTo",
-    label: "Insurance Round Down Increment ($)",
-    step: "1",
-    min: "1",
-    hint: "Insurance (est.) is rounded down to the nearest increment."
+    hint: "Insurance (est.) before rounding = Purchase Price x Homeowners Insurance Annual Rate / 12. Rounding tiers: <=$300k round up to $25, $300,001-$550k round down to $25, >$550k round down to $50."
   },
   {
     key: "hoaMonthly",

@@ -42,7 +42,6 @@ type CostGroup = {
 const APPRAISAL_PROMO_END_EXCLUSIVE = new Date("2026-05-01T00:00:00-05:00");
 const APPRAISAL_PROMO_DESCRIPTION =
   "Stone River Mortgage will pay up to $600 in appraisal fees";
-const HOMEOWNERS_INSURANCE_MONTHLY_REDUCTION = 50;
 const FOOTER_DISCLAIMER_HOA =
   "HOA dues, if any, are paid separately";
 const FOOTER_COMPANY_NMLS_LINE =
@@ -353,6 +352,13 @@ function roundDownToNearest(value: number, increment: number): number {
   return Math.floor(value / increment) * increment;
 }
 
+function roundUpToNearest(value: number, increment: number): number {
+  if (increment <= 0) {
+    return value;
+  }
+  return Math.ceil(value / increment) * increment;
+}
+
 function roundToCents(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -375,6 +381,24 @@ function getMortgageInsuranceFactor(downPaymentPercent: number): number {
   }
 
   return 0.000158333333;
+}
+
+function calculateHomeownersInsuranceMonthly(params: {
+  purchasePrice: number;
+  homeownersInsuranceRate: number;
+}): number {
+  const { purchasePrice, homeownersInsuranceRate } = params;
+  const monthlyBase = (purchasePrice * homeownersInsuranceRate) / 12;
+
+  if (purchasePrice <= 300000) {
+    return roundUpToNearest(monthlyBase, 25);
+  }
+
+  if (purchasePrice <= 550000) {
+    return roundDownToNearest(monthlyBase, 25);
+  }
+
+  return roundDownToNearest(monthlyBase, 50);
 }
 
 function getLastWeekdayOfMonth(referenceDate: Date): Date {
@@ -524,10 +548,10 @@ export async function POST(request: Request) {
     });
     const homeownersInsuranceMonthly = Math.max(
       0,
-      roundDownToNearest(
-        (purchasePrice * pricingConfig.homeownersInsuranceRate) / 12,
-        pricingConfig.homeownersInsuranceRoundDownTo
-      ) - HOMEOWNERS_INSURANCE_MONTHLY_REDUCTION
+      calculateHomeownersInsuranceMonthly({
+        purchasePrice,
+        homeownersInsuranceRate: pricingConfig.homeownersInsuranceRate
+      })
     );
     const mortgageInsuranceFactor = getMortgageInsuranceFactor(
       payload.downPaymentPercent
