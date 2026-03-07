@@ -30,6 +30,7 @@ const STREET_SUFFIX_ABBREVIATIONS = new Set([
 ]);
 
 type DownPaymentOption = "5" | "10" | "15" | "20" | "25" | "custom";
+type CustomDownPaymentMode = "percent" | "amount";
 
 type FormErrors = {
   address?: string;
@@ -224,7 +225,10 @@ export function MarketingPage() {
   const [purchasePrice, setPurchasePrice] = useState("");
   const [downPaymentOption, setDownPaymentOption] =
     useState<DownPaymentOption>("20");
+  const [customDownPaymentMode, setCustomDownPaymentMode] =
+    useState<CustomDownPaymentMode>("percent");
   const [customDownPaymentPercent, setCustomDownPaymentPercent] = useState("");
+  const [customDownPaymentAmount, setCustomDownPaymentAmount] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [requestError, setRequestError] = useState<string | null>(null);
   const [propertyTaxResult, setPropertyTaxResult] =
@@ -239,11 +243,45 @@ export function MarketingPage() {
 
   const downPaymentPercent = useMemo(() => {
     if (downPaymentOption === "custom") {
+      if (customDownPaymentMode === "amount") {
+        const parsedPurchasePrice = parseNumericInput(purchasePrice);
+        const parsedCustomAmount = parseNumericInput(customDownPaymentAmount);
+        if (parsedPurchasePrice <= 0) {
+          return Number.NaN;
+        }
+        return (parsedCustomAmount / parsedPurchasePrice) * 100;
+      }
+
       return Number.parseFloat(customDownPaymentPercent);
     }
 
     return Number.parseFloat(downPaymentOption);
-  }, [downPaymentOption, customDownPaymentPercent]);
+  }, [
+    customDownPaymentAmount,
+    customDownPaymentMode,
+    customDownPaymentPercent,
+    downPaymentOption,
+    purchasePrice
+  ]);
+
+  const estimatedDownPaymentAmount = useMemo(() => {
+    if (downPaymentOption === "custom" && customDownPaymentMode === "amount") {
+      return parseNumericInput(customDownPaymentAmount);
+    }
+
+    const parsedPurchasePrice = parseNumericInput(purchasePrice);
+    return (
+      (parsedPurchasePrice *
+        (Number.isFinite(downPaymentPercent) ? downPaymentPercent : 0)) /
+      100
+    );
+  }, [
+    customDownPaymentAmount,
+    customDownPaymentMode,
+    downPaymentOption,
+    downPaymentPercent,
+    purchasePrice
+  ]);
 
   useEffect(() => {
     return () => {
@@ -350,7 +388,7 @@ export function MarketingPage() {
     const parsedPurchasePrice = parseNumericInput(purchasePrice);
     const parsedDownPaymentPercent = Number.isFinite(downPaymentPercent)
       ? downPaymentPercent
-      : 0;
+      : Number.NaN;
 
     if (!address.trim() || !selectedPlaceId || !verifiedAddress) {
       formErrors.address =
@@ -368,13 +406,16 @@ export function MarketingPage() {
       formErrors.purchasePrice = "Purchase price must be greater than 0.";
     }
 
-    if (
-      !Number.isFinite(parsedDownPaymentPercent) ||
-      parsedDownPaymentPercent <= 0 ||
-      parsedDownPaymentPercent >= 100
-    ) {
+    if (!Number.isFinite(parsedDownPaymentPercent)) {
       formErrors.downPaymentPercent =
-        "Down payment percent must be greater than 0 and less than 100.";
+        downPaymentOption === "custom" && customDownPaymentMode === "amount"
+          ? "Down payment amount must be greater than 0 and less than purchase price."
+          : "Down payment percent must be greater than 0 and less than 100.";
+    } else if (parsedDownPaymentPercent <= 0 || parsedDownPaymentPercent >= 100) {
+      formErrors.downPaymentPercent =
+        downPaymentOption === "custom" && customDownPaymentMode === "amount"
+          ? "Down payment amount must be greater than 0 and less than purchase price."
+          : "Down payment percent must be greater than 0 and less than 100.";
     }
 
     if (!formErrors.purchasePrice && !formErrors.downPaymentPercent) {
@@ -403,6 +444,16 @@ export function MarketingPage() {
 
   const handlePurchasePriceChange = (value: string) => {
     setPurchasePrice(formatNumericInputWithCommas(value));
+  };
+
+  const handleCustomDownPaymentAmountChange = (value: string) => {
+    setCustomDownPaymentAmount(formatNumericInputWithCommas(value));
+  };
+
+  const handleCustomDownPaymentAmountBlur = () => {
+    setCustomDownPaymentAmount(
+      formatNumericInputWithCommas(customDownPaymentAmount)
+    );
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -952,28 +1003,92 @@ export function MarketingPage() {
 
                 {downPaymentOption === "custom" ? (
                   <div className="mt-3">
-                    <label
-                      htmlFor="custom-down-payment"
-                      className="mb-1.5 block text-sm font-medium text-slate-800"
+                    <p className="mb-1.5 block text-sm font-medium text-slate-800">
+                      Custom Down Payment
+                    </p>
+                    <div
+                      role="group"
+                      aria-label="Custom down payment entry mode"
+                      className="mb-2 flex flex-wrap gap-2"
                     >
-                      Custom Down Payment %
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="custom-down-payment"
-                        type="number"
-                        min="0"
-                        max="99.99"
-                        step="0.01"
-                        value={customDownPaymentPercent}
-                        onChange={(event) => setCustomDownPaymentPercent(event.target.value)}
-                        placeholder="18"
-                        className="w-full rounded-xl border border-slate-300 py-2.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20"
-                      />
-                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
-                        %
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomDownPaymentMode("percent");
+                          setErrors((current) => ({
+                            ...current,
+                            downPaymentPercent: undefined,
+                            loanAmount: undefined
+                          }));
+                        }}
+                        className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                          customDownPaymentMode === "percent"
+                            ? "border-emerald-600 bg-emerald-600 text-white shadow-sm focus-visible:ring-emerald-600"
+                            : "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50 focus-visible:ring-slateBlue"
+                        }`}
+                        aria-pressed={customDownPaymentMode === "percent"}
+                      >
+                        Percent (%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomDownPaymentMode("amount");
+                          setErrors((current) => ({
+                            ...current,
+                            downPaymentPercent: undefined,
+                            loanAmount: undefined
+                          }));
+                        }}
+                        className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                          customDownPaymentMode === "amount"
+                            ? "border-emerald-600 bg-emerald-600 text-white shadow-sm focus-visible:ring-emerald-600"
+                            : "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50 focus-visible:ring-slateBlue"
+                        }`}
+                        aria-pressed={customDownPaymentMode === "amount"}
+                      >
+                        Dollar Amount ($)
+                      </button>
                     </div>
+
+                    {customDownPaymentMode === "percent" ? (
+                      <div className="relative">
+                        <input
+                          id="custom-down-payment"
+                          type="number"
+                          min="0"
+                          max="99.99"
+                          step="0.01"
+                          value={customDownPaymentPercent}
+                          onChange={(event) =>
+                            setCustomDownPaymentPercent(event.target.value)
+                          }
+                          placeholder="18"
+                          className="w-full rounded-xl border border-slate-300 py-2.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20"
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                          %
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                          $
+                        </span>
+                        <input
+                          id="custom-down-payment-amount"
+                          type="text"
+                          inputMode="decimal"
+                          value={customDownPaymentAmount}
+                          onChange={(event) =>
+                            handleCustomDownPaymentAmountChange(event.target.value)
+                          }
+                          onBlur={handleCustomDownPaymentAmountBlur}
+                          placeholder="75,000"
+                          className="w-full rounded-xl border border-slate-300 py-2.5 pl-7 pr-3 text-sm text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20"
+                        />
+                      </div>
+                    )}
                   </div>
                 ) : null}
 
@@ -983,7 +1098,7 @@ export function MarketingPage() {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                Estimated down payment: {formatCurrency((parseNumericInput(purchasePrice) * (Number.isFinite(downPaymentPercent) ? downPaymentPercent : 0)) / 100)}
+                Estimated down payment: {formatCurrency(estimatedDownPaymentAmount)}
               </div>
               {errors.loanAmount ? (
                 <p className="text-sm text-red-700">{errors.loanAmount}</p>
