@@ -820,7 +820,7 @@ export function DailyPricingPage() {
                   <p className="mt-1">
                     Stone River Mortgage LLC nmls# 2090973, Mike Sikkink nmls# 345256
                   </p>
-                  <p className="mt-1">HOA dues, if any, are paid directly to the HOA</p>
+                  <p className="mt-1">HOA dues, if any, are paid separately</p>
                 </div>
               </section>
 

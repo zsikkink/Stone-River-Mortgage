@@ -44,7 +44,7 @@ const APPRAISAL_PROMO_DESCRIPTION =
   "Stone River Mortgage will pay up to $600 in appraisal fees";
 const HOMEOWNERS_INSURANCE_MONTHLY_REDUCTION = 50;
 const FOOTER_DISCLAIMER_HOA =
-  "HOA dues, if any, are paid directly to the HOA";
+  "HOA dues, if any, are paid separately";
 const FOOTER_COMPANY_NMLS_LINE =
   "Stone River Mortgage LLC nmls# 2090973, Mike Sikkink nmls# 345256";
 
