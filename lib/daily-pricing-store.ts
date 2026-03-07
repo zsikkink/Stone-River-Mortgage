@@ -20,6 +20,9 @@ const DAILY_PRICING_KV_REST_TOKEN =
   "";
 const DAILY_PRICING_KV_KEY =
   process.env.DAILY_PRICING_KV_KEY || "stone-river-mortgage:daily-pricing:v1";
+const DAILY_PRICING_ANALYTICS_KV_KEY =
+  process.env.DAILY_PRICING_ANALYTICS_KV_KEY ||
+  `${DAILY_PRICING_KV_KEY}:analytics`;
 type EnvMap = Record<string, string | undefined>;
 
 export function resolveDailyPricingDataDir(
@@ -709,6 +712,22 @@ async function writeStoreToKv(store: PricingStore): Promise<void> {
   await kvSetValue(DAILY_PRICING_KV_KEY, JSON.stringify(store));
 }
 
+async function writeAnalyticsToKv(
+  analytics: DailyPricingAnalytics
+): Promise<void> {
+  await kvSetValue(DAILY_PRICING_ANALYTICS_KV_KEY, JSON.stringify(analytics));
+}
+
+async function readAnalyticsFromKv(): Promise<DailyPricingAnalytics | null> {
+  const raw = await kvGetValue(DAILY_PRICING_ANALYTICS_KV_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  const parsed: unknown = JSON.parse(raw);
+  return normalizeStoredAnalytics(parsed);
+}
+
 async function readStoreFromKv(): Promise<PricingStore | null> {
   const raw = await kvGetValue(DAILY_PRICING_KV_KEY);
   if (!raw) {
@@ -994,8 +1013,33 @@ export async function getPricingConfig(): Promise<PricingConfig> {
 }
 
 export async function getDailyPricingAnalytics(): Promise<DailyPricingAnalytics> {
+  if (isDailyPricingKvConfigured()) {
+    try {
+      const kvAnalytics = await readAnalyticsFromKv();
+      if (kvAnalytics) {
+        return kvAnalytics;
+      }
+    } catch (error) {
+      console.warn("Daily pricing analytics read from KV REST failed.", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    }
+  }
+
   const store = await ensureStore();
-  return store.analytics;
+  const normalizedAnalytics = normalizeStoredAnalytics(store.analytics);
+
+  if (isDailyPricingKvConfigured()) {
+    try {
+      await writeAnalyticsToKv(normalizedAnalytics);
+    } catch (error) {
+      console.warn("Daily pricing analytics write to KV REST failed.", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    }
+  }
+
+  return normalizedAnalytics;
 }
 
 function normalizeAnalyticsCounty(county: string | null | undefined): string {
@@ -1062,6 +1106,13 @@ export function classifyPropertyTaxLookupOutcome(
 }
 
 export async function recordTransactionSummaryGenerated(): Promise<void> {
+  if (isDailyPricingKvConfigured()) {
+    const analytics = await getDailyPricingAnalytics();
+    analytics.pdfGeneratedCount += 1;
+    await writeAnalyticsToKv(analytics);
+    return;
+  }
+
   const store = await ensureStore();
   store.analytics.pdfGeneratedCount += 1;
   await writeStore(store);
@@ -1070,6 +1121,52 @@ export async function recordTransactionSummaryGenerated(): Promise<void> {
 export async function recordPropertyTaxLookup(
   input: PropertyTaxLookupRecordInput
 ): Promise<void> {
+  if (isDailyPricingKvConfigured()) {
+    const analytics = await getDailyPricingAnalytics();
+    analytics.propertyTaxLookupCount += 1;
+
+    const normalizedCounty = normalizeAnalyticsCounty(input.county);
+    analytics.propertyTaxLookupCountByCounty[normalizedCounty] =
+      (analytics.propertyTaxLookupCountByCounty[normalizedCounty] ?? 0) + 1;
+
+    const countyOutcomes =
+      analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] ??
+      createDefaultCountyOutcomeCounts();
+    const lookupOutcome = classifyPropertyTaxLookupOutcome({
+      resultType: input.resultType,
+      actualTaxYearUsed: input.actualTaxYearUsed,
+      currentYear: input.currentYear
+    });
+    if (lookupOutcome === "current_year") {
+      countyOutcomes.currentYear += 1;
+    } else if (lookupOutcome === "previous_year") {
+      countyOutcomes.previousYear += 1;
+    } else if (lookupOutcome === "older_year") {
+      countyOutcomes.olderYear += 1;
+    } else {
+      countyOutcomes.failed += 1;
+    }
+
+    analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] = countyOutcomes;
+
+    if (!input.isMetroCounty) {
+      analytics.propertyTaxLookupNonMetroCount += 1;
+    }
+
+    if (
+      wasCurrentOrPreviousYearRecordFound({
+        resultType: input.resultType,
+        actualTaxYearUsed: input.actualTaxYearUsed,
+        currentYear: input.currentYear
+      })
+    ) {
+      analytics.propertyTaxCurrentOrPreviousYearRecordFoundCount += 1;
+    }
+
+    await writeAnalyticsToKv(analytics);
+    return;
+  }
+
   const store = await ensureStore();
   store.analytics.propertyTaxLookupCount += 1;
 

@@ -102,7 +102,7 @@ const coreNumericFields: Array<{
   key: CoreNumericFieldKey;
   label: string;
   step: string;
-  min: string;
+  min?: string;
   hint: string;
 }> = [
   {
@@ -115,23 +115,8 @@ const coreNumericFields: Array<{
   {
     key: "discountPointFactor",
     label: "Discount Point Factor",
-    step: "0.0001",
-    min: "-10",
-    hint: "Discount points amount = Loan Amount x Discount Point Factor. Negative values are allowed."
-  },
-  {
-    key: "aprSpread",
-    label: "APR Spread (%)",
-    step: "0.001",
-    min: "0",
-    hint: "APR shown on PDF = Interest Rate + APR Spread."
-  },
-  {
-    key: "propertyTaxAnnualRate",
-    label: "Property Tax Annual Rate",
-    step: "0.0001",
-    min: "0",
-    hint: "Property tax (est.) = Purchase Price x Property Tax Annual Rate / 12."
+    step: "any",
+    hint: "Discount points amount = Loan Amount x Discount Point Factor. Any numeric value is allowed."
   },
   {
     key: "homeownersInsuranceRate",
@@ -146,13 +131,6 @@ const coreNumericFields: Array<{
     step: "1",
     min: "1",
     hint: "Insurance (est.) is rounded down to the nearest increment."
-  },
-  {
-    key: "mortgageInsuranceMonthly",
-    label: "Mortgage Insurance Monthly ($)",
-    step: "0.01",
-    min: "0",
-    hint: "Mortgage insurance line item uses this monthly amount."
   },
   {
     key: "hoaMonthly",
@@ -178,11 +156,6 @@ const feeFields: Array<{
   {
     key: "underwritingFee",
     label: "Underwriting Fee",
-    hint: "Added directly to closing costs."
-  },
-  {
-    key: "appraisalFee",
-    label: "Appraisal Fee",
     hint: "Added directly to closing costs."
   },
   {
@@ -216,16 +189,6 @@ const feeFields: Array<{
     hint: "Added directly to closing costs."
   },
   {
-    key: "lenderTitlePolicy",
-    label: "Lender Title Policy",
-    hint: "Added directly to closing costs."
-  },
-  {
-    key: "ownerTitlePolicy",
-    label: "Owner Title Policy",
-    hint: "Added directly to closing costs."
-  },
-  {
     key: "countyRecording",
     label: "County Recording Fee",
     hint: "Added directly to closing costs."
@@ -253,24 +216,9 @@ const footerFields: Array<{
     hint: "Printed in the PDF footer disclaimer line."
   },
   {
-    key: "interestAvailabilityPrefix",
-    label: "Interest Availability Prefix",
-    hint: "Printed before today's date in the PDF footer."
-  },
-  {
-    key: "companyLine",
-    label: "Company Line",
-    hint: "Printed in the PDF footer company line."
-  },
-  {
     key: "pricingUpdatedPrefix",
     label: "Pricing Updated Prefix",
     hint: "Printed before the last-updated timestamp."
-  },
-  {
-    key: "contactLine",
-    label: "Contact Line",
-    hint: "Printed in PDF header and footer contact rows."
   }
 ];
 
@@ -356,13 +304,13 @@ export function DailyPricingPage() {
       setDraftPricing(toEditablePricing(data.pricing));
       setWarningMessage(data.authWarning || null);
 
-      if (data.storage?.storageMode === "memory_fallback") {
+      if (data.authenticated && data.storage?.storageMode === "memory_fallback") {
         setWarningMessage((current) =>
           current
             ? `${current} Pricing settings are currently using in-memory storage and may not persist across restarts.`
             : "Pricing settings are currently using in-memory storage and may not persist across restarts."
         );
-      } else if (data.storage?.serverlessFilesystemRisk) {
+      } else if (data.authenticated && data.storage?.serverlessFilesystemRisk) {
         setWarningMessage((current) =>
           current
             ? `${current} Pricing settings are stored on serverless filesystem and may not propagate across functions. Configure KV_REST_API_URL and KV_REST_API_TOKEN (or DAILY_PRICING_KV_REST_URL and DAILY_PRICING_KV_REST_TOKEN) for persistent shared pricing.`
@@ -771,6 +719,10 @@ export function DailyPricingPage() {
 
               <section>
                 <h2 className="text-lg font-semibold text-slate-900">Fees</h2>
+                <p className="mt-1 text-xs text-slate-600">
+                  Appraisal and title policy lines currently follow fixed PDF rules and are
+                  not editable in this panel.
+                </p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   {feeFields.map((field) => (
                     <div key={field.key}>

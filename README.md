@@ -37,6 +37,8 @@ Optional production hardening:
   - Vercel KV defaults (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) are also supported.
 - `DAILY_PRICING_KV_KEY`
   - Optional KV key override (default: `stone-river-mortgage:daily-pricing:v1`).
+- `DAILY_PRICING_ANALYTICS_KV_KEY`
+  - Optional KV key override for activity analytics (default: `<DAILY_PRICING_KV_KEY>:analytics`).
 - `DAILY_PRICING_DATA_DIR`
   - Overrides where `daily-pricing.json` is stored.
   - Defaults:
@@ -70,7 +72,7 @@ Optional production hardening:
 
 ### Vercel Runtime Note
 
-Daily Pricing settings are file-backed by default and use `/tmp/stone-river-mortgage` in serverless environments. `/tmp` is writable but ephemeral and not shared reliably across functions, so production should use KV REST (`KV_REST_API_URL`/`KV_REST_API_TOKEN` or `DAILY_PRICING_KV_REST_URL`/`DAILY_PRICING_KV_REST_TOKEN`) for durable shared pricing.
+Daily Pricing settings are file-backed by default and use `/tmp/stone-river-mortgage` in serverless environments. `/tmp` is writable but ephemeral and not shared reliably across functions, so production should use KV REST (`KV_REST_API_URL`/`KV_REST_API_TOKEN` or `DAILY_PRICING_KV_REST_URL`/`DAILY_PRICING_KV_REST_TOKEN`) for durable shared pricing and persistent activity analytics.
 
 ## Verification Commands
 
