@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyPropertyTaxLookupOutcome,
   getDailyPricingAuthWarning,
   resolveDailyPricingDataDir,
   wasCurrentOrPreviousYearRecordFound
@@ -71,5 +72,47 @@ describe("wasCurrentOrPreviousYearRecordFound", () => {
         currentYear: 2026
       })
     ).toBe(false);
+  });
+});
+
+describe("classifyPropertyTaxLookupOutcome", () => {
+  it("classifies current year records", () => {
+    expect(
+      classifyPropertyTaxLookupOutcome({
+        resultType: "county_retrieved",
+        actualTaxYearUsed: 2026,
+        currentYear: 2026
+      })
+    ).toBe("current_year");
+  });
+
+  it("classifies previous year records", () => {
+    expect(
+      classifyPropertyTaxLookupOutcome({
+        resultType: "county_retrieved",
+        actualTaxYearUsed: 2025,
+        currentYear: 2026
+      })
+    ).toBe("previous_year");
+  });
+
+  it("classifies older year records", () => {
+    expect(
+      classifyPropertyTaxLookupOutcome({
+        resultType: "county_retrieved",
+        actualTaxYearUsed: 2024,
+        currentYear: 2026
+      })
+    ).toBe("older_year");
+  });
+
+  it("classifies non-county-retrieved records as failures", () => {
+    expect(
+      classifyPropertyTaxLookupOutcome({
+        resultType: "estimated",
+        actualTaxYearUsed: 2026,
+        currentYear: 2026
+      })
+    ).toBe("failed");
   });
 });

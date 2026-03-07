@@ -8,6 +8,18 @@ const DEFAULT_LOCAL_DATA_DIR = path.join(process.cwd(), ".data");
 const DEFAULT_SERVERLESS_DATA_DIR = "/tmp/stone-river-mortgage";
 const ALLOW_DEFAULT_SEEDED_CREDENTIALS_ENV =
   "DAILY_PRICING_ALLOW_DEFAULT_SEEDED_CREDENTIALS";
+const DAILY_PRICING_KV_REST_URL =
+  process.env.DAILY_PRICING_KV_REST_URL ||
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  "";
+const DAILY_PRICING_KV_REST_TOKEN =
+  process.env.DAILY_PRICING_KV_REST_TOKEN ||
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  "";
+const DAILY_PRICING_KV_KEY =
+  process.env.DAILY_PRICING_KV_KEY || "stone-river-mortgage:daily-pricing:v1";
 type EnvMap = Record<string, string | undefined>;
 
 export function resolveDailyPricingDataDir(
@@ -100,8 +112,16 @@ export type DailyPricingAnalytics = {
   pdfGeneratedCount: number;
   propertyTaxLookupCount: number;
   propertyTaxLookupCountByCounty: Record<string, number>;
+  propertyTaxLookupOutcomesByCounty: Record<string, PropertyTaxLookupOutcomeCounts>;
   propertyTaxLookupNonMetroCount: number;
   propertyTaxCurrentOrPreviousYearRecordFoundCount: number;
+};
+
+export type PropertyTaxLookupOutcomeCounts = {
+  currentYear: number;
+  previousYear: number;
+  olderYear: number;
+  failed: number;
 };
 
 type PropertyTaxLookupRecordInput = {
@@ -111,6 +131,12 @@ type PropertyTaxLookupRecordInput = {
   actualTaxYearUsed: number | null | undefined;
   currentYear?: number;
 };
+
+export type PropertyTaxLookupOutcomeCategory =
+  | "current_year"
+  | "previous_year"
+  | "older_year"
+  | "failed";
 
 type PricingStore = {
   users: UserRecord[];
@@ -204,11 +230,21 @@ export function getDailyPricingAuthWarning(
 
 export function getDailyPricingStorageDiagnostics(): {
   dataDir: string;
-  storageMode: "filesystem" | "memory_fallback";
+  storageMode: "filesystem" | "memory_fallback" | "kv_rest";
+  serverlessFilesystemRisk: boolean;
+  kvConfigured: boolean;
 } {
+  const kvConfigured = isDailyPricingKvConfigured();
   return {
     dataDir: DATA_DIR,
-    storageMode: inMemoryStoreFallback ? "memory_fallback" : "filesystem"
+    storageMode: kvConfigured
+      ? "kv_rest"
+      : inMemoryStoreFallback
+        ? "memory_fallback"
+        : "filesystem",
+    serverlessFilesystemRisk:
+      !kvConfigured && isServerlessRuntime(process.env) && !inMemoryStoreFallback,
+    kvConfigured
   };
 }
 
@@ -232,11 +268,22 @@ function defaultStore(): PricingStore {
   };
 }
 
+function isDailyPricingKvConfigured(): boolean {
+  return Boolean(
+    DAILY_PRICING_KV_REST_URL.trim() && DAILY_PRICING_KV_REST_TOKEN.trim()
+  );
+}
+
+function isServerlessRuntime(env: EnvMap = process.env): boolean {
+  return Boolean(env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME);
+}
+
 function createDefaultAnalytics(): DailyPricingAnalytics {
   return {
     pdfGeneratedCount: 0,
     propertyTaxLookupCount: 0,
     propertyTaxLookupCountByCounty: {},
+    propertyTaxLookupOutcomesByCounty: {},
     propertyTaxLookupNonMetroCount: 0,
     propertyTaxCurrentOrPreviousYearRecordFoundCount: 0
   };
@@ -284,6 +331,9 @@ function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
   const byCountySource = isObject(source.propertyTaxLookupCountByCounty)
     ? source.propertyTaxLookupCountByCounty
     : {};
+  const byCountyOutcomesSource = isObject(source.propertyTaxLookupOutcomesByCounty)
+    ? source.propertyTaxLookupOutcomesByCounty
+    : {};
 
   const byCounty: Record<string, number> = {};
   for (const [key, value] of Object.entries(byCountySource)) {
@@ -298,6 +348,65 @@ function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
     }
 
     byCounty[county] = Math.floor(count);
+  }
+
+  const byCountyOutcomes: Record<string, PropertyTaxLookupOutcomeCounts> = {};
+  for (const [key, value] of Object.entries(byCountyOutcomesSource)) {
+    const county = key.trim();
+    if (!county || !isObject(value)) {
+      continue;
+    }
+
+    byCountyOutcomes[county] = {
+      currentYear: Math.floor(
+        toNumberWithFallback({
+          value: value.currentYear,
+          fallback: 0,
+          min: 0
+        })
+      ),
+      previousYear: Math.floor(
+        toNumberWithFallback({
+          value: value.previousYear,
+          fallback: 0,
+          min: 0
+        })
+      ),
+      olderYear: Math.floor(
+        toNumberWithFallback({
+          value: value.olderYear,
+          fallback: 0,
+          min: 0
+        })
+      ),
+      failed: Math.floor(
+        toNumberWithFallback({
+          value: value.failed,
+          fallback: 0,
+          min: 0
+        })
+      )
+    };
+  }
+
+  for (const [county, count] of Object.entries(byCounty)) {
+    if (!byCountyOutcomes[county]) {
+      byCountyOutcomes[county] = {
+        currentYear: 0,
+        previousYear: 0,
+        olderYear: 0,
+        failed: count
+      };
+      continue;
+    }
+
+    const outcomeTotal = Object.values(byCountyOutcomes[county]).reduce(
+      (sum, value) => sum + value,
+      0
+    );
+    if (outcomeTotal < count) {
+      byCountyOutcomes[county].failed += count - outcomeTotal;
+    }
   }
 
   return {
@@ -316,6 +425,7 @@ function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
       })
     ),
     propertyTaxLookupCountByCounty: byCounty,
+    propertyTaxLookupOutcomesByCounty: byCountyOutcomes,
     propertyTaxLookupNonMetroCount: Math.floor(
       toNumberWithFallback({
         value: source.propertyTaxLookupNonMetroCount,
@@ -347,8 +457,7 @@ function normalizeStoredPricing(input: unknown): PricingConfig {
     }),
     discountPointFactor: toNumberWithFallback({
       value: source.discountPointFactor,
-      fallback: DEFAULT_PRICING.discountPointFactor,
-      min: 0
+      fallback: DEFAULT_PRICING.discountPointFactor
     }),
     aprSpread: toNumberWithFallback({
       value: source.aprSpread,
@@ -519,6 +628,18 @@ function pruneExpiredSessions(store: PricingStore): boolean {
 }
 
 async function writeStore(store: PricingStore): Promise<void> {
+  if (isDailyPricingKvConfigured()) {
+    try {
+      await writeStoreToKv(store);
+      inMemoryStoreFallback = null;
+      return;
+    } catch (error) {
+      console.warn("Daily pricing store failed to write to KV REST backend.", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    }
+  }
+
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
@@ -539,7 +660,106 @@ async function writeStore(store: PricingStore): Promise<void> {
   }
 }
 
+function getDailyPricingKvBaseUrl(): string {
+  return DAILY_PRICING_KV_REST_URL.replace(/\/+$/g, "");
+}
+
+function getDailyPricingKvHeaders(): Record<string, string> {
+  return {
+    Authorization: `Bearer ${DAILY_PRICING_KV_REST_TOKEN}`,
+    "Content-Type": "text/plain; charset=utf-8"
+  };
+}
+
+async function kvGetValue(key: string): Promise<string | null> {
+  const baseUrl = getDailyPricingKvBaseUrl();
+  const response = await fetch(`${baseUrl}/get/${encodeURIComponent(key)}`, {
+    method: "GET",
+    headers: getDailyPricingKvHeaders(),
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`KV GET failed with status ${response.status}.`);
+  }
+
+  const payload: unknown = await response.json();
+  if (!isObject(payload)) {
+    return null;
+  }
+
+  return typeof payload.result === "string" ? payload.result : null;
+}
+
+async function kvSetValue(key: string, value: string): Promise<void> {
+  const baseUrl = getDailyPricingKvBaseUrl();
+  const response = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: getDailyPricingKvHeaders(),
+    body: value,
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`KV SET failed with status ${response.status}.`);
+  }
+}
+
+async function writeStoreToKv(store: PricingStore): Promise<void> {
+  await kvSetValue(DAILY_PRICING_KV_KEY, JSON.stringify(store));
+}
+
+async function readStoreFromKv(): Promise<PricingStore | null> {
+  const raw = await kvGetValue(DAILY_PRICING_KV_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  const parsed: unknown = JSON.parse(raw);
+  if (!isPricingStore(parsed)) {
+    return null;
+  }
+
+  const store: PricingStore = {
+    users: parsed.users,
+    sessions: parsed.sessions,
+    pricing: normalizeStoredPricing(parsed.pricing),
+    analytics: normalizeStoredAnalytics(parsed.analytics)
+  };
+
+  const seededEmail = normalizeEmail(SEEDED_EMAIL);
+  const hasSeededUser = store.users.some(
+    (user) => normalizeEmail(user.email) === seededEmail
+  );
+  if (!hasSeededUser) {
+    store.users.push(createSeedUser());
+  }
+
+  pruneExpiredSessions(store);
+  return store;
+}
+
 async function ensureStore(): Promise<PricingStore> {
+  if (isDailyPricingKvConfigured()) {
+    try {
+      const existingStore = await readStoreFromKv();
+      if (existingStore) {
+        return existingStore;
+      }
+
+      const seededStore = defaultStore();
+      await writeStoreToKv(seededStore);
+      return seededStore;
+    } catch (error) {
+      console.warn("Daily pricing store failed to read from KV REST backend.", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+      const seededStore = defaultStore();
+      await writeStore(seededStore);
+      return seededStore;
+    }
+  }
+
   if (inMemoryStoreFallback) {
     return inMemoryStoreFallback;
   }
@@ -638,8 +858,7 @@ export function parsePricingConfigUpdate(input: unknown): EditablePricingConfig 
     }),
     discountPointFactor: requireNumber({
       name: "discountPointFactor",
-      value: source.discountPointFactor,
-      min: 0
+      value: source.discountPointFactor
     }),
     aprSpread: requireNumber({
       name: "aprSpread",
@@ -799,20 +1018,47 @@ export function wasCurrentOrPreviousYearRecordFound(
     "resultType" | "actualTaxYearUsed" | "currentYear"
   >
 ): boolean {
+  const outcome = classifyPropertyTaxLookupOutcome(input);
+  return outcome === "current_year" || outcome === "previous_year";
+}
+
+function createDefaultCountyOutcomeCounts(): PropertyTaxLookupOutcomeCounts {
+  return {
+    currentYear: 0,
+    previousYear: 0,
+    olderYear: 0,
+    failed: 0
+  };
+}
+
+export function classifyPropertyTaxLookupOutcome(
+  input: Pick<
+    PropertyTaxLookupRecordInput,
+    "resultType" | "actualTaxYearUsed" | "currentYear"
+  >
+): PropertyTaxLookupOutcomeCategory {
   if (input.resultType !== "county_retrieved") {
-    return false;
+    return "failed";
   }
 
   if (
     typeof input.actualTaxYearUsed !== "number" ||
     !Number.isFinite(input.actualTaxYearUsed)
   ) {
-    return false;
+    return "failed";
   }
 
   const currentYear = input.currentYear ?? new Date().getFullYear();
   const year = Math.floor(input.actualTaxYearUsed);
-  return year === currentYear || year === currentYear - 1;
+  if (year >= currentYear) {
+    return "current_year";
+  }
+
+  if (year === currentYear - 1) {
+    return "previous_year";
+  }
+
+  return "older_year";
 }
 
 export async function recordTransactionSummaryGenerated(): Promise<void> {
@@ -830,6 +1076,27 @@ export async function recordPropertyTaxLookup(
   const normalizedCounty = normalizeAnalyticsCounty(input.county);
   store.analytics.propertyTaxLookupCountByCounty[normalizedCounty] =
     (store.analytics.propertyTaxLookupCountByCounty[normalizedCounty] ?? 0) + 1;
+
+  const countyOutcomes =
+    store.analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] ??
+    createDefaultCountyOutcomeCounts();
+  const lookupOutcome = classifyPropertyTaxLookupOutcome({
+    resultType: input.resultType,
+    actualTaxYearUsed: input.actualTaxYearUsed,
+    currentYear: input.currentYear
+  });
+  if (lookupOutcome === "current_year") {
+    countyOutcomes.currentYear += 1;
+  } else if (lookupOutcome === "previous_year") {
+    countyOutcomes.previousYear += 1;
+  } else if (lookupOutcome === "older_year") {
+    countyOutcomes.olderYear += 1;
+  } else {
+    countyOutcomes.failed += 1;
+  }
+
+  store.analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] =
+    countyOutcomes;
 
   if (!input.isMetroCounty) {
     store.analytics.propertyTaxLookupNonMetroCount += 1;

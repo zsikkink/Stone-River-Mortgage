@@ -11,8 +11,23 @@ const APPLY_URL =
   "https://www.blink.mortgage/app/signup/p/stonerivermortgagellc/mikesikkink?campaign=StoneRiverMortgage";
 const PHONE_DISPLAY = "612.850.2018";
 const PHONE_LINK = "tel:+16128502018";
-const TRANSACTION_SUMMARY_PDF_FILENAME =
-  "Stone_River_Mortgage_Transaction_Summary.pdf";
+const DEFAULT_TRANSACTION_SUMMARY_PDF_FILENAME =
+  "Stone River Mortgage Transaction Summary.pdf";
+const STREET_SUFFIX_ABBREVIATIONS = new Set([
+  "RD",
+  "ST",
+  "AVE",
+  "BLVD",
+  "DR",
+  "LN",
+  "CT",
+  "PL",
+  "PKWY",
+  "TER",
+  "CIR",
+  "TRL",
+  "HWY"
+]);
 
 type DownPaymentOption = "5" | "10" | "15" | "20" | "25" | "custom";
 
@@ -115,6 +130,49 @@ function formatNumericInputWithCommas(value: string): string {
   return formattedInteger;
 }
 
+function formatDownPaymentForFilename(percent: number): string {
+  const roundedToTwo = Math.round(percent * 100) / 100;
+  const valueText = Number.isInteger(roundedToTwo)
+    ? String(Math.trunc(roundedToTwo))
+    : roundedToTwo.toFixed(2).replace(/\.?0+$/, "");
+  return `${valueText}%`;
+}
+
+function trimTrailingStreetSuffix(streetLine: string): string {
+  const parts = streetLine.trim().split(/\s+/);
+  if (parts.length < 2) {
+    return streetLine.trim();
+  }
+
+  const lastPart = parts[parts.length - 1]?.replace(/\./g, "").toUpperCase();
+  if (lastPart && STREET_SUFFIX_ABBREVIATIONS.has(lastPart)) {
+    return parts.slice(0, -1).join(" ");
+  }
+
+  return streetLine.trim();
+}
+
+function sanitizeFilenameSegment(value: string): string {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildTransactionSummaryFilename(params: {
+  formattedAddress: string;
+  downPaymentPercent: number;
+}): string {
+  const normalizedAddress = params.formattedAddress.replace(/,\s*USA\s*$/i, "").trim();
+  const streetLine = normalizedAddress.split(",")[0]?.trim() ?? "";
+  const streetForFilename = sanitizeFilenameSegment(
+    trimTrailingStreetSuffix(streetLine)
+  );
+  const safeStreet = streetForFilename || "Transaction Summary";
+  const downPaymentLabel = formatDownPaymentForFilename(params.downPaymentPercent);
+  return `${safeStreet} - ${downPaymentLabel} Down.pdf`;
+}
+
 function LogoShell({
   className,
   priority = false,
@@ -173,6 +231,9 @@ export function MarketingPage() {
     useState<PropertyTaxResult | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewFilename, setPreviewFilename] = useState(
+    DEFAULT_TRANSACTION_SUMMARY_PDF_FILENAME
+  );
   const [shareError, setShareError] = useState<string | null>(null);
   const previewRef = useRef<HTMLElement | null>(null);
 
@@ -447,6 +508,12 @@ export function MarketingPage() {
       const blob = await response.blob();
       const nextPreviewUrl = URL.createObjectURL(blob);
       setPreviewBlob(blob);
+      setPreviewFilename(
+        buildTransactionSummaryFilename({
+          formattedAddress: effectiveVerifiedAddress.formattedAddress,
+          downPaymentPercent: parsedDownPaymentPercent
+        })
+      );
       setShareError(null);
 
       setPreviewUrl((currentUrl) => {
@@ -491,7 +558,7 @@ export function MarketingPage() {
         return;
       }
 
-      const file = new File([previewBlob], TRANSACTION_SUMMARY_PDF_FILENAME, {
+      const file = new File([previewBlob], previewFilename, {
         type: "application/pdf"
       });
       const fileShareData: ShareData = { files: [file] };
@@ -580,7 +647,7 @@ export function MarketingPage() {
                   </button>
                   <a
                     href={previewUrl}
-                    download={TRANSACTION_SUMMARY_PDF_FILENAME}
+                    download={previewFilename}
                     className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 sm:w-auto"
                   >
                     Download PDF

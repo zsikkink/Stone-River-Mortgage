@@ -56,6 +56,17 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+function formatPercentLabel(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0%";
+  }
+
+  const normalized = Number.isInteger(value)
+    ? String(Math.trunc(value))
+    : value.toFixed(2).replace(/\.?0+$/, "");
+  return `${normalized}%`;
+}
+
 function calculateMonthlyPrincipalAndInterest(
   loanAmount: number,
   annualRatePercent: number,
@@ -473,6 +484,7 @@ export async function POST(request: Request) {
     const purchasePrice = payload.purchasePrice;
     const downPaymentAmount =
       (purchasePrice * payload.downPaymentPercent) / 100;
+    const downPaymentPercentLabel = formatPercentLabel(payload.downPaymentPercent);
     const loanAmount = purchasePrice - downPaymentAmount;
     const loanBoundsMessage = getLoanAmountBoundsMessage(loanAmount);
 
@@ -810,7 +822,7 @@ export async function POST(request: Request) {
 
     const leftLoanRows: Array<[string, string]> = [
       ["Purchase Price", toUsd(purchasePrice)],
-      ["Down Payment", toUsd(downPaymentAmount)],
+      [`Down Payment (${downPaymentPercentLabel})`, toUsd(downPaymentAmount)],
       ["Loan Amount", toUsd(loanAmount)],
       ["Interest Rate", `${interestRate.toFixed(3)}%`],
       ["APR", `${apr.toFixed(3)}%`],
@@ -993,7 +1005,7 @@ export async function POST(request: Request) {
     });
 
     const fundsRows: Array<[string, string]> = [
-      ["Down Payment", toUsd(downPaymentAmount)],
+      [`Down Payment (${downPaymentPercentLabel})`, toUsd(downPaymentAmount)],
       ["Closing Costs", toUsd(totalClosingCosts)],
       ["Real Estate Brokerage Admin Fee", toUsd(brokerageAdminFee)]
     ];

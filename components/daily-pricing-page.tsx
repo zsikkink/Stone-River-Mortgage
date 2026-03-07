@@ -52,6 +52,20 @@ type PricingAnalytics = {
   pdfGeneratedCount: number;
   propertyTaxLookupCount: number;
   propertyTaxLookupCountByCounty: Record<string, number>;
+  propertyTaxLookupRatesByCounty: Record<
+    string,
+    {
+      total: number;
+      currentYearCount: number;
+      previousYearCount: number;
+      olderYearCount: number;
+      failedCount: number;
+      currentYearRate: number;
+      previousYearRate: number;
+      olderYearRate: number;
+      failedRate: number;
+    }
+  >;
   propertyTaxLookupNonMetroCount: number;
   propertyTaxCurrentOrPreviousYearRecordFoundCount: number;
   currentYear: number;
@@ -67,7 +81,9 @@ type PricingResponse = {
   authWarning?: string | null;
   storage?: {
     dataDir: string;
-    storageMode: "filesystem" | "memory_fallback";
+    storageMode: "filesystem" | "memory_fallback" | "kv_rest";
+    serverlessFilesystemRisk: boolean;
+    kvConfigured: boolean;
   };
 };
 
@@ -100,8 +116,8 @@ const coreNumericFields: Array<{
     key: "discountPointFactor",
     label: "Discount Point Factor",
     step: "0.0001",
-    min: "0",
-    hint: "Discount points amount = Loan Amount x Discount Point Factor."
+    min: "-10",
+    hint: "Discount points amount = Loan Amount x Discount Point Factor. Negative values are allowed."
   },
   {
     key: "aprSpread",
@@ -345,6 +361,12 @@ export function DailyPricingPage() {
           current
             ? `${current} Pricing settings are currently using in-memory storage and may not persist across restarts.`
             : "Pricing settings are currently using in-memory storage and may not persist across restarts."
+        );
+      } else if (data.storage?.serverlessFilesystemRisk) {
+        setWarningMessage((current) =>
+          current
+            ? `${current} Pricing settings are stored on serverless filesystem and may not propagate across functions. Configure KV_REST_API_URL and KV_REST_API_TOKEN (or DAILY_PRICING_KV_REST_URL and DAILY_PRICING_KV_REST_TOKEN) for persistent shared pricing.`
+            : "Pricing settings are stored on serverless filesystem and may not propagate across functions. Configure KV_REST_API_URL and KV_REST_API_TOKEN (or DAILY_PRICING_KV_REST_URL and DAILY_PRICING_KV_REST_TOKEN) for persistent shared pricing."
         );
       }
     } catch {
@@ -648,20 +670,39 @@ export function DailyPricingPage() {
                   <h3 className="text-sm font-semibold text-slate-800">
                     Property Tax Lookups by County
                   </h3>
-                  {Object.keys(analytics.propertyTaxLookupCountByCounty).length ===
+                  {Object.keys(analytics.propertyTaxLookupRatesByCounty).length ===
                   0 ? (
                     <p className="mt-1 text-sm text-slate-600">
                       No lookup activity yet.
                     </p>
                   ) : (
-                    <ul className="mt-1 grid gap-x-6 gap-y-1 text-sm text-slate-700 sm:grid-cols-2">
-                      {Object.entries(analytics.propertyTaxLookupCountByCounty)
+                    <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                      {Object.entries(analytics.propertyTaxLookupRatesByCounty)
                         .sort(([leftCounty], [rightCounty]) =>
                           leftCounty.localeCompare(rightCounty)
                         )
-                        .map(([county, count]) => (
-                          <li key={county}>
-                            {county}: {count}
+                        .map(([county, rates]) => (
+                          <li
+                            key={county}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          >
+                            <p className="font-medium text-slate-900">
+                              {county} ({rates.total})
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              {analytics.currentYear}:{" "}
+                              {(rates.currentYearRate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              {analytics.previousYear}:{" "}
+                              {(rates.previousYearRate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              Older: {(rates.olderYearRate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              Fail: {(rates.failedRate * 100).toFixed(1)}%
+                            </p>
                           </li>
                         ))}
                     </ul>

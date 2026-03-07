@@ -32,6 +32,11 @@ Optional production hardening:
 
 - `DAILY_PRICING_SEED_TOKEN`
   - Required to call `/api/daily-pricing/seed` in production.
+- `DAILY_PRICING_KV_REST_URL` and `DAILY_PRICING_KV_REST_TOKEN`
+  - Recommended for Vercel production so Daily Pricing updates are shared across API routes/functions.
+  - Vercel KV defaults (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) are also supported.
+- `DAILY_PRICING_KV_KEY`
+  - Optional KV key override (default: `stone-river-mortgage:daily-pricing:v1`).
 - `DAILY_PRICING_DATA_DIR`
   - Overrides where `daily-pricing.json` is stored.
   - Defaults:
@@ -52,6 +57,7 @@ Optional production hardening:
    - `GOOGLE_MAPS_API_KEY`
    - `DAILY_PRICING_SEEDED_EMAIL`
    - `DAILY_PRICING_SEEDED_PASSWORD`
+   - `KV_REST_API_URL` and `KV_REST_API_TOKEN` (recommended, via Vercel KV integration)
    - `CARVER_CA_PEM` (recommended for Carver county)
    - optional: `DAILY_PRICING_SEED_TOKEN`
 2. Keep API routes on Node runtime (already configured with `export const runtime = "nodejs"`).
@@ -64,7 +70,7 @@ Optional production hardening:
 
 ### Vercel Runtime Note
 
-Daily Pricing settings are file-backed and default to `/tmp/stone-river-mortgage` in serverless environments. `/tmp` is writable but ephemeral, so admin updates are not durable across instance rotation/redeploys unless you configure durable storage externally.
+Daily Pricing settings are file-backed by default and use `/tmp/stone-river-mortgage` in serverless environments. `/tmp` is writable but ephemeral and not shared reliably across functions, so production should use KV REST (`KV_REST_API_URL`/`KV_REST_API_TOKEN` or `DAILY_PRICING_KV_REST_URL`/`DAILY_PRICING_KV_REST_TOKEN`) for durable shared pricing.
 
 ## Verification Commands
 
