@@ -934,8 +934,11 @@ export async function POST(request: Request) {
       for (const row of group.rows) {
         const isPropertyTaxLine = row.label.includes("Property Tax");
         const isHomeownersInsuranceLine = row.label.includes("Homeowners Insurance");
+        const isEscrowHomeownersInsuranceLine = row.label.includes(
+          "Homeowners Insurance (3 Months)"
+        );
         const isEstimatedLine =
-          isHomeownersInsuranceLine ||
+          (isHomeownersInsuranceLine && !isEscrowHomeownersInsuranceLine) ||
           (isPropertyTaxLine && propertyTaxEstimated);
         const label = isEstimatedLine ? `${row.label} (est.)` : row.label;
 
