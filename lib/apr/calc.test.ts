@@ -1,0 +1,41 @@
+import { describe, expect, it } from "vitest";
+import {
+  calculateAprAnnual,
+  calculateMonthlyPayment
+} from "./calc";
+import {
+  MAX_LOAN_AMOUNT_MESSAGE,
+  MIN_LOAN_AMOUNT_MESSAGE
+} from "../constants";
+import { getLoanAmountBoundsMessage } from "../loanAmount";
+
+describe("Loan amount bounds", () => {
+  it("returns min loan amount message for loan below minimum", () => {
+    expect(getLoanAmountBoundsMessage(124999)).toBe(MIN_LOAN_AMOUNT_MESSAGE);
+  });
+
+  it("returns max loan amount message for loan above maximum", () => {
+    expect(getLoanAmountBoundsMessage(832751)).toBe(MAX_LOAN_AMOUNT_MESSAGE);
+  });
+});
+
+describe("APR calculation parity", () => {
+  it("matches PMT from spreadsheet example", () => {
+    const payment = calculateMonthlyPayment(0.05625, 360, 292425);
+
+    expect(payment).toBeCloseTo(1683.36323977, 8);
+  });
+
+  it("matches APR RATE/PMT method from spreadsheet example", () => {
+    const result = calculateAprAnnual({
+      termMonths: 360,
+      noteRateAnnual: 0.05625,
+      loanAmount: 292425,
+      pointsPercent: 0.09,
+      underwritingFee: 1250,
+      perDiemDays: 1
+    });
+
+    expect(result.aprAnnual).toBeCloseTo(0.0567378673, 8);
+  });
+});
