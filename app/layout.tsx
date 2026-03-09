@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   description: "Purchase & refinance mortgage lending in Minnesota and Florida.",
   metadataBase: new URL("https://stonerivermortgage.com/"),
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/favicon.ico"
+    icon: [{ url: "/favicon.ico", type: "image/x-icon", sizes: "any" }],
+    shortcut: ["/favicon.ico"],
+    apple: [{ url: "/favicon.ico" }]
   },
   formatDetection: {
     telephone: false,
