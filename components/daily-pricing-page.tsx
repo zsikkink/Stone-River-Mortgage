@@ -125,7 +125,7 @@ const coreNumericFields: Array<{
     key: "discountPointFactor",
     label: "Discount Point Factor",
     step: "any",
-    hint: "Entered as a percent (example: 0.933 means 0.933%). Discount points amount = (Loan Amount x Discount Point Factor) / 100."
+    hint: "Entered as a percent (example: 0.933 means 0.933%). Allowed range: -5 to 5. Discount points amount = (Loan Amount x Discount Point Factor) / 100."
   },
   {
     key: "propertyTaxAnnualRate",

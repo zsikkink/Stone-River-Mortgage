@@ -311,9 +311,10 @@ function toNumberWithFallback(params: {
   value: unknown;
   fallback: number;
   min?: number;
+  max?: number;
   allowZero?: boolean;
 }): number {
-  const { value, fallback, min, allowZero = true } = params;
+  const { value, fallback, min, max, allowZero = true } = params;
   const parsed = Number(value);
 
   if (!Number.isFinite(parsed)) {
@@ -325,6 +326,10 @@ function toNumberWithFallback(params: {
   }
 
   if (typeof min === "number" && parsed < min) {
+    return fallback;
+  }
+
+  if (typeof max === "number" && parsed > max) {
     return fallback;
   }
 
@@ -517,7 +522,9 @@ function normalizeStoredPricing(input: unknown): PricingConfig {
     }),
     discountPointFactor: toNumberWithFallback({
       value: source.discountPointFactor,
-      fallback: DEFAULT_PRICING.discountPointFactor
+      fallback: DEFAULT_PRICING.discountPointFactor,
+      min: -5,
+      max: 5
     }),
     aprSpread: toNumberWithFallback({
       value: source.aprSpread,
@@ -899,9 +906,10 @@ function requireNumber(params: {
   name: string;
   value: unknown;
   min?: number;
+  max?: number;
   allowZero?: boolean;
 }): number {
-  const { name, value, min, allowZero = true } = params;
+  const { name, value, min, max, allowZero = true } = params;
   const parsed = Number(value);
 
   if (!Number.isFinite(parsed)) {
@@ -914,6 +922,10 @@ function requireNumber(params: {
 
   if (typeof min === "number" && parsed < min) {
     throw new Error(`${name} must be at least ${min}.`);
+  }
+
+  if (typeof max === "number" && parsed > max) {
+    throw new Error(`${name} must be at most ${max}.`);
   }
 
   return parsed;
@@ -940,7 +952,9 @@ export function parsePricingConfigUpdate(input: unknown): EditablePricingConfig 
     }),
     discountPointFactor: requireNumber({
       name: "discountPointFactor",
-      value: source.discountPointFactor
+      value: source.discountPointFactor,
+      min: -5,
+      max: 5
     }),
     aprSpread: requireNumber({
       name: "aprSpread",

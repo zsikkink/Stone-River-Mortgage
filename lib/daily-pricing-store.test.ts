@@ -2,9 +2,52 @@ import { describe, expect, it } from "vitest";
 import {
   classifyPropertyTaxLookupOutcome,
   getDailyPricingAuthWarning,
+  parsePricingConfigUpdate,
   resolveDailyPricingDataDir,
   wasCurrentOrPreviousYearRecordFound
 } from "./daily-pricing-store";
+
+function createValidPricingUpdateInput(overrides: Record<string, unknown> = {}) {
+  return {
+    interestRate: 5.625,
+    discountPointFactor: 0.933,
+    aprSpread: 0.118,
+    loanTerm: "30-YR Fixed",
+    propertyTaxAnnualRate: 0.0139,
+    homeownersInsuranceRate: 0.008,
+    homeownersInsuranceRoundDownTo: 25,
+    mortgageInsuranceMonthly: 0,
+    hoaMonthly: 0,
+    mortgageRegistrationTaxRate: 0.0024,
+    monthEndInterestDays: 1,
+    fees: {
+      underwritingFee: 1250,
+      appraisalFee: 550,
+      creditReportFee: 219,
+      mersFee: 25,
+      floodCertFee: 8,
+      taxServiceFee: 85,
+      settlementFee: 345,
+      titlePrepFee: 750,
+      lenderTitlePolicy: 972,
+      ownerTitlePolicy: 487,
+      countyRecording: 92,
+      conservationFee: 5,
+      brokerageAdminFee: 695
+    },
+    footer: {
+      estimatedChargesLine:
+        "Information provided is an illustration of estimated charges and is subject to change",
+      interestAvailabilityPrefix:
+        "Interest rate assumes 780+ credit score, available as of 10AM",
+      companyLine:
+        "Stone River Mortgage LLC nmls# 2090973. StoneRiverMortgage.com",
+      pricingUpdatedPrefix: "Rates and points last updated:",
+      contactLine: "Contact: 612.850.2018"
+    },
+    ...overrides
+  };
+}
 
 describe("resolveDailyPricingDataDir", () => {
   it("uses explicit DAILY_PRICING_DATA_DIR when provided", () => {
@@ -114,5 +157,35 @@ describe("classifyPropertyTaxLookupOutcome", () => {
         currentYear: 2026
       })
     ).toBe("failed");
+  });
+});
+
+describe("parsePricingConfigUpdate", () => {
+  it("accepts discount point factor boundaries", () => {
+    const low = parsePricingConfigUpdate(
+      createValidPricingUpdateInput({ discountPointFactor: -5 })
+    );
+    const high = parsePricingConfigUpdate(
+      createValidPricingUpdateInput({ discountPointFactor: 5 })
+    );
+
+    expect(low.discountPointFactor).toBe(-5);
+    expect(high.discountPointFactor).toBe(5);
+  });
+
+  it("rejects discount point factor below minimum", () => {
+    expect(() =>
+      parsePricingConfigUpdate(
+        createValidPricingUpdateInput({ discountPointFactor: -5.01 })
+      )
+    ).toThrow("discountPointFactor must be at least -5.");
+  });
+
+  it("rejects discount point factor above maximum", () => {
+    expect(() =>
+      parsePricingConfigUpdate(
+        createValidPricingUpdateInput({ discountPointFactor: 5.01 })
+      )
+    ).toThrow("discountPointFactor must be at most 5.");
   });
 });
