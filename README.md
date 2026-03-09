@@ -1,6 +1,6 @@
 # Stone River Mortgage
 
-Production Next.js application for **Stone River Mortgage** that combines a public marketing experience with an internal Daily Pricing dashboard and a one-page transaction summary PDF generator.
+Production-grade Next.js platform for **Stone River Mortgage** that combines a polished public marketing experience with a real operational pricing engine. It delivers county-aware Minnesota property-tax retrieval, configurable lending assumptions, and fast server-generated transaction summary PDFs from a single, maintainable TypeScript codebase.
 
 Primary domain: `https://stonerivermortgage.com`
 
