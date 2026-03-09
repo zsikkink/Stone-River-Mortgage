@@ -308,6 +308,7 @@ export function DailyPricingPage() {
   const [draftPricing, setDraftPricing] = useState<EditablePricingConfig | null>(
     null
   );
+  const [discountPointFactorInput, setDiscountPointFactorInput] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -333,6 +334,7 @@ export function DailyPricingPage() {
       setRateHistory(data.rateHistory ?? []);
       setAnalytics(data.analytics ?? null);
       setDraftPricing(toEditablePricing(data.pricing));
+      setDiscountPointFactorInput(String(data.pricing.discountPointFactor));
       setWarningMessage(data.authWarning || null);
 
       if (data.authenticated && data.storage?.storageMode === "memory_fallback") {
@@ -430,11 +432,22 @@ export function DailyPricingPage() {
       return;
     }
 
+    const parsedDiscountPointFactor = Number(discountPointFactorInput);
+    if (!Number.isFinite(parsedDiscountPointFactor)) {
+      setSubmitting(false);
+      setErrorMessage("Discount point factor must be a valid number.");
+      return;
+    }
+
     try {
+      const pricingToSave: EditablePricingConfig = {
+        ...draftPricing,
+        discountPointFactor: parsedDiscountPointFactor
+      };
       const response = await fetch("/api/daily-pricing/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pricing: draftPricing })
+        body: JSON.stringify({ pricing: pricingToSave })
       });
 
       const payload = (await response.json()) as {
@@ -449,6 +462,7 @@ export function DailyPricingPage() {
 
       setPricing(payload.pricing);
       setDraftPricing(toEditablePricing(payload.pricing));
+      setDiscountPointFactorInput(String(payload.pricing.discountPointFactor));
       setRateHistory(payload.rateHistory ?? []);
       setSuccessMessage("Pricing settings updated.");
     } catch (error) {
@@ -728,9 +742,15 @@ export function DailyPricingPage() {
                         step={field.key === "discountPointFactor" ? undefined : field.step}
                         min={field.key === "discountPointFactor" ? undefined : field.min}
                         required
-                        value={draftPricing[field.key]}
+                        value={
+                          field.key === "discountPointFactor"
+                            ? discountPointFactorInput
+                            : draftPricing[field.key]
+                        }
                         onChange={(event) =>
-                          updateCoreNumericField(field.key, event.target.value)
+                          field.key === "discountPointFactor"
+                            ? setDiscountPointFactorInput(event.target.value)
+                            : updateCoreNumericField(field.key, event.target.value)
                         }
                         className={inputClassName}
                       />
