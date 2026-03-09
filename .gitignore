@@ -1,6 +1,7 @@
 node_modules
 .next
 out
+.vercel
 npm-debug.log*
 .DS_Store
 *.tsbuildinfo

@@ -2,6 +2,17 @@
   "name": "stone-river-mortgage",
   "version": "0.1.0",
   "private": true,
+  "description": "Stone River Mortgage website and transaction summary engine built with Next.js and TypeScript.",
+  "author": "Zack Sikkink",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zsikkink/Stone-River-Mortgage.git"
+  },
+  "homepage": "https://stonerivermortgage.com",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "node scripts/reset-next-cache.mjs && next dev",
     "dev:carver": "node scripts/dev-carver.mjs",
