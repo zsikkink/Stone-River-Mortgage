@@ -56,6 +56,14 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+function normalizePdfText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function formatPercentLabel(value: number): string {
   if (!Number.isFinite(value)) {
     return "0%";
@@ -505,7 +513,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const addressForPdf = address.replace(/,\s*USA\s*$/i, "").trim();
+    const addressForPdf = normalizePdfText(
+      address.replace(/,\s*USA\s*$/i, "").trim()
+    );
     const purchasePrice = payload.purchasePrice;
     const downPaymentAmount =
       (purchasePrice * payload.downPaymentPercent) / 100;
@@ -583,15 +593,26 @@ export async function POST(request: Request) {
 
     const settlementFee = pricingConfig.fees.settlementFee;
     const titlePrepFee = pricingConfig.fees.titlePrepFee;
-    const titlePremiums = calculateTitlePremiums({
-      purchasePrice,
-      loanAmount,
-      expandedOwnersCoverage: false,
-      refinance: false,
-      simultaneousIssue: false
-    });
-    const lenderTitlePolicy = titlePremiums.lenderPremium;
-    const ownerTitlePolicy = titlePremiums.ownerPremium;
+    let lenderTitlePolicy = pricingConfig.fees.lenderTitlePolicy;
+    let ownerTitlePolicy = pricingConfig.fees.ownerTitlePolicy;
+    try {
+      const titlePremiums = calculateTitlePremiums({
+        purchasePrice,
+        loanAmount,
+        expandedOwnersCoverage: false,
+        refinance: false,
+        simultaneousIssue: false
+      });
+      lenderTitlePolicy = titlePremiums.lenderPremium;
+      ownerTitlePolicy = titlePremiums.ownerPremium;
+    } catch (titleError) {
+      console.error(
+        "Title premium calculation failed; using configured fallback fee values.",
+        {
+          error: titleError instanceof Error ? titleError.message : "unknown"
+        }
+      );
+    }
 
     const countyRecording = pricingConfig.fees.countyRecording;
     const mortgageRegistrationTax =
@@ -609,16 +630,28 @@ export async function POST(request: Request) {
     const monthEndInterest =
       ((loanAmount * (interestRate / 100)) / 365) *
       monthEndInterestDays;
-    const aprCalculation = calculateAprAnnual({
-      termMonths: parseLoanTermMonths(loanTerm),
-      noteRateAnnual: interestRate / 100,
-      loanAmount,
-      discountPointFactor,
-      underwritingFee,
-      prePaidInterest: monthEndInterest,
-      principalAndInterest: monthlyPrincipalAndInterest
-    });
-    const apr = aprCalculation.aprAnnual * 100;
+    let apr = interestRate;
+    try {
+      const aprCalculation = calculateAprAnnual({
+        termMonths: parseLoanTermMonths(loanTerm),
+        noteRateAnnual: interestRate / 100,
+        loanAmount,
+        discountPointFactor,
+        underwritingFee,
+        prePaidInterest: monthEndInterest,
+        principalAndInterest: monthlyPrincipalAndInterest
+      });
+      apr = aprCalculation.aprAnnual * 100;
+    } catch (aprError) {
+      console.error("APR calculation failed; using interest rate as APR fallback.", {
+        error: aprError instanceof Error ? aprError.message : "unknown",
+        interestRate,
+        discountPointFactor,
+        loanAmount,
+        underwritingFee,
+        monthEndInterest
+      });
+    }
 
     const escrowInsurance = homeownersInsuranceMonthly * 3;
     const escrowTax = propertyTaxMonthly * 6;
