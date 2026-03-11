@@ -15,6 +15,8 @@ const DEFAULT_TRANSACTION_SUMMARY_PDF_FILENAME =
   "Stone River Mortgage Transaction Summary.pdf";
 const PDF_PREVIEW_WIDTH = 612;
 const PDF_PREVIEW_HEIGHT = 792;
+const DESKTOP_PDF_PREVIEW_BREAKPOINT = 1024;
+const MOBILE_PDF_PREVIEW_BOTTOM_MARGIN = 16;
 const STREET_SUFFIX_ABBREVIATIONS = new Set([
   "RD",
   "ST",
@@ -76,6 +78,12 @@ type ShareCapableNavigator = Navigator & {
   share?: (data: ShareData) => Promise<void>;
 };
 
+type PdfJsModule = typeof import("pdfjs-dist/build/pdf.mjs");
+type PdfDocumentLoadingTask = ReturnType<PdfJsModule["getDocument"]>;
+type PdfDocumentProxy = Awaited<PdfDocumentLoadingTask["promise"]>;
+type PdfPageProxy = Awaited<ReturnType<PdfDocumentProxy["getPage"]>>;
+type PdfRenderTask = ReturnType<PdfPageProxy["render"]>;
+
 const DOWN_PAYMENT_BUTTONS: Array<{ value: DownPaymentOption; label: string }> = [
   { value: "5", label: "5%" },
   { value: "10", label: "10%" },
@@ -84,6 +92,217 @@ const DOWN_PAYMENT_BUTTONS: Array<{ value: DownPaymentOption; label: string }> =
   { value: "25", label: "25%" },
   { value: "custom", label: "Custom" }
 ];
+
+let pdfJsModulePromise: Promise<PdfJsModule> | null = null;
+
+const PDF_PREVIEW_STANDARD_FONT_DATA_URL = "/pdfjs/standard_fonts/";
+
+function getPdfJsModule() {
+  if (!pdfJsModulePromise) {
+    pdfJsModulePromise = import("pdfjs-dist/build/pdf.mjs").then((module) => {
+      module.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url
+      ).toString();
+
+      return module;
+    });
+  }
+
+  return pdfJsModulePromise;
+}
+
+function isPdfPreviewCancellationError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.name === "AbortException" ||
+    error.name === "RenderingCancelledException" ||
+    /worker was destroyed/i.test(error.message) ||
+    /transport destroyed/i.test(error.message)
+  );
+}
+
+function PdfPreviewCanvas({
+  previewBlob,
+  scale
+}: {
+  previewBlob: Blob;
+  scale: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const loadingTaskRef = useRef<PdfDocumentLoadingTask | null>(null);
+  const pdfDocumentRef = useRef<PdfDocumentProxy | null>(null);
+  const renderTaskRef = useRef<PdfRenderTask | null>(null);
+  const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState(true);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const loadDocument = async () => {
+      setRenderError(null);
+      setIsRendering(true);
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+      setPdfDocument(null);
+
+      if (loadingTaskRef.current) {
+        void loadingTaskRef.current.destroy();
+        loadingTaskRef.current = null;
+      }
+
+      if (pdfDocumentRef.current) {
+        void pdfDocumentRef.current.destroy();
+        pdfDocumentRef.current = null;
+      }
+
+      try {
+        const pdfjs = await getPdfJsModule().catch((error) => {
+          console.error("Failed to initialize PDF.js preview module.", error);
+          throw error;
+        });
+        const data = new Uint8Array(await previewBlob.arrayBuffer());
+        if (disposed) {
+          return;
+        }
+
+        const loadingTask = pdfjs.getDocument({
+          data,
+          standardFontDataUrl: PDF_PREVIEW_STANDARD_FONT_DATA_URL,
+          useWorkerFetch: false
+        });
+        loadingTaskRef.current = loadingTask;
+        const pdfDocument = await loadingTask.promise;
+
+        if (disposed) {
+          void pdfDocument.destroy();
+          return;
+        }
+
+        pdfDocumentRef.current = pdfDocument;
+        setPdfDocument(pdfDocument);
+      } catch (error) {
+        if (disposed || isPdfPreviewCancellationError(error)) {
+          return;
+        }
+
+        console.error("Failed to load PDF.js document preview.", error);
+        setRenderError("Unable to render the PDF preview.");
+        setIsRendering(false);
+      }
+    };
+
+    void loadDocument();
+
+    return () => {
+      disposed = true;
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+
+      if (loadingTaskRef.current) {
+        void loadingTaskRef.current.destroy();
+        loadingTaskRef.current = null;
+      }
+
+      if (pdfDocumentRef.current) {
+        void pdfDocumentRef.current.destroy();
+        pdfDocumentRef.current = null;
+      }
+    };
+  }, [previewBlob]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const renderFirstPage = async () => {
+      const canvas = canvasRef.current;
+      if (!pdfDocument || !canvas) {
+        return;
+      }
+
+      setRenderError(null);
+      setIsRendering(true);
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+
+      try {
+        const page = await pdfDocument.getPage(1);
+        if (disposed) {
+          return;
+        }
+
+        const deviceScale = Math.max(window.devicePixelRatio || 1, 1);
+        const cssViewport = page.getViewport({ scale });
+        const renderViewport = page.getViewport({ scale: scale * deviceScale });
+        const context = canvas.getContext("2d", { alpha: false });
+
+        if (!context) {
+          throw new Error("Unable to acquire a canvas context for the PDF preview.");
+        }
+
+        canvas.width = Math.ceil(renderViewport.width);
+        canvas.height = Math.ceil(renderViewport.height);
+        canvas.style.width = `${cssViewport.width}px`;
+        canvas.style.height = `${cssViewport.height}px`;
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        const renderTask = page.render({
+          canvasContext: context,
+          viewport: renderViewport
+        });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+
+        if (!disposed) {
+          setIsRendering(false);
+        }
+      } catch (error) {
+        if (disposed || isPdfPreviewCancellationError(error)) {
+          return;
+        }
+
+        console.error("Failed to render PDF.js page preview.", error);
+        if (!disposed) {
+          setRenderError("Unable to render the PDF preview.");
+          setIsRendering(false);
+        }
+      }
+    };
+
+    void renderFirstPage();
+
+    return () => {
+      disposed = true;
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+    };
+  }, [pdfDocument, scale]);
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-label="Transaction Summary PDF Preview"
+        className="absolute left-0 top-0 block bg-white"
+      />
+      {isRendering ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-white text-sm text-slate-500">
+          Rendering preview...
+        </div>
+      ) : null}
+      {renderError ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-white px-4 text-center text-sm text-red-700">
+          {renderError}
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -209,7 +428,14 @@ export function MarketingPage() {
   const [shareError, setShareError] = useState<string | null>(null);
   const previewRef = useRef<HTMLElement | null>(null);
   const pdfPreviewViewportRef = useRef<HTMLDivElement | null>(null);
-  const [pdfPreviewScale, setPdfPreviewScale] = useState(1);
+  const pdfPreviewLastWidthRef = useRef<number | null>(null);
+  const pdfPreviewLastIsDesktopRef = useRef<boolean | null>(null);
+  const pdfPreviewMobileScaleLockedRef = useRef(false);
+  const [pdfPreviewScale, setPdfPreviewScale] = useState<number | null>(null);
+  const [isDesktopPdfPreview, setIsDesktopPdfPreview] = useState(true);
+  const [mobilePdfPreviewHeight, setMobilePdfPreviewHeight] = useState<number | null>(
+    null
+  );
 
   const downPaymentPercent = useMemo(() => {
     if (downPaymentOption === "custom") {
@@ -262,6 +488,14 @@ export function MarketingPage() {
   }, [previewUrl]);
 
   useEffect(() => {
+    setPdfPreviewScale(null);
+    setMobilePdfPreviewHeight(null);
+    pdfPreviewLastWidthRef.current = null;
+    pdfPreviewLastIsDesktopRef.current = null;
+    pdfPreviewMobileScaleLockedRef.current = false;
+  }, [previewUrl]);
+
+  useEffect(() => {
     const node = pdfPreviewViewportRef.current;
     if (!node) {
       return;
@@ -272,7 +506,50 @@ export function MarketingPage() {
     const updateScale = () => {
       const availableWidth = node.clientWidth;
       const widthScale = availableWidth / PDF_PREVIEW_WIDTH;
-      const nextScale = Math.min(widthScale, 1);
+      const roundedWidth = Math.round(availableWidth);
+      const isDesktopViewport =
+        window.innerWidth >= DESKTOP_PDF_PREVIEW_BREAKPOINT;
+      const previousWidth = pdfPreviewLastWidthRef.current;
+      const previousIsDesktop = pdfPreviewLastIsDesktopRef.current;
+      setIsDesktopPdfPreview(isDesktopViewport);
+
+      if (isDesktopViewport) {
+        pdfPreviewLastWidthRef.current = roundedWidth;
+        pdfPreviewLastIsDesktopRef.current = true;
+        setMobilePdfPreviewHeight(null);
+        setPdfPreviewScale(
+          Number.isFinite(widthScale) && widthScale > 0 ? widthScale : 1
+        );
+        return;
+      }
+
+      const shouldSkipHeightOnlyMobileUpdate =
+        pdfPreviewMobileScaleLockedRef.current &&
+        previousIsDesktop === false &&
+        previousWidth === roundedWidth;
+
+      if (shouldSkipHeightOnlyMobileUpdate) {
+        return;
+      }
+
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const rect = node.getBoundingClientRect();
+      const rawAvailableHeight =
+        viewportHeight - rect.top - MOBILE_PDF_PREVIEW_BOTTOM_MARGIN;
+      const availableHeight =
+        Number.isFinite(rawAvailableHeight) && rawAvailableHeight > 0
+          ? rawAvailableHeight
+          : viewportHeight * 0.6;
+      const heightScale = availableHeight / PDF_PREVIEW_HEIGHT;
+      const nextScale = Math.min(widthScale, heightScale, 1);
+
+      pdfPreviewLastWidthRef.current = roundedWidth;
+      pdfPreviewLastIsDesktopRef.current = false;
+      setMobilePdfPreviewHeight(
+        Number.isFinite(availableHeight) && availableHeight > 0
+          ? availableHeight
+          : null
+      );
       setPdfPreviewScale(Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1);
     };
 
@@ -286,6 +563,12 @@ export function MarketingPage() {
     };
 
     scheduleUpdate();
+    const delayedUpdateIds = [180, 360].map((delay) =>
+      window.setTimeout(scheduleUpdate, delay)
+    );
+    const mobileScaleLockTimeoutId = window.setTimeout(() => {
+      pdfPreviewMobileScaleLockedRef.current = true;
+    }, 420);
 
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
@@ -296,15 +579,17 @@ export function MarketingPage() {
     }
 
     window.addEventListener("resize", scheduleUpdate);
-    window.visualViewport?.addEventListener("resize", scheduleUpdate);
 
     return () => {
       if (frameId) {
         window.cancelAnimationFrame(frameId);
       }
+      delayedUpdateIds.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      window.clearTimeout(mobileScaleLockTimeoutId);
       observer?.disconnect();
       window.removeEventListener("resize", scheduleUpdate);
-      window.visualViewport?.removeEventListener("resize", scheduleUpdate);
     };
   }, [previewUrl]);
 
@@ -712,7 +997,7 @@ export function MarketingPage() {
           </div>
         </section>
 
-        {previewUrl ? (
+        {previewUrl && previewBlob ? (
           <section
             ref={previewRef}
             className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8"
@@ -757,27 +1042,39 @@ export function MarketingPage() {
             ) : null}
 
             <div className="mt-5">
-              <div ref={pdfPreviewViewportRef} className="mx-auto w-full overflow-x-auto">
-                <div
-                  className="relative mx-auto overflow-hidden"
-                  style={{
-                    width: PDF_PREVIEW_WIDTH * pdfPreviewScale,
-                    height: PDF_PREVIEW_HEIGHT * pdfPreviewScale
-                  }}
-                >
-                  <iframe
-                    src={`${previewUrl}#page=1&toolbar=0&navpanes=0&scrollbar=0`}
-                    title="Transaction Summary PDF Preview"
-                    scrolling="no"
-                    className="absolute left-0 top-0 block border-0"
+              <div
+                ref={pdfPreviewViewportRef}
+                className="mx-auto flex w-full items-start justify-center overflow-hidden lg:overflow-visible"
+                style={{
+                  height:
+                    pdfPreviewScale !== null &&
+                    !isDesktopPdfPreview &&
+                    mobilePdfPreviewHeight
+                      ? Math.min(
+                          mobilePdfPreviewHeight,
+                          PDF_PREVIEW_HEIGHT * pdfPreviewScale
+                        )
+                      : undefined
+                }}
+              >
+                {pdfPreviewScale === null ? (
+                  <div className="flex min-h-[8rem] items-center justify-center text-sm text-slate-500">
+                    Preparing preview...
+                  </div>
+                ) : (
+                  <div
+                    className="relative shrink-0 overflow-hidden bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_20px_rgba(15,23,42,0.08)] lg:shadow-[0_1px_2px_rgba(15,23,42,0.08),0_10px_24px_rgba(15,23,42,0.12)]"
                     style={{
-                      width: PDF_PREVIEW_WIDTH,
-                      height: PDF_PREVIEW_HEIGHT,
-                      transform: `scale(${pdfPreviewScale})`,
-                      transformOrigin: "top left"
+                      width: PDF_PREVIEW_WIDTH * pdfPreviewScale,
+                      height: PDF_PREVIEW_HEIGHT * pdfPreviewScale
                     }}
-                  />
-                </div>
+                  >
+                    <PdfPreviewCanvas
+                      previewBlob={previewBlob}
+                      scale={pdfPreviewScale}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -818,7 +1115,7 @@ export function MarketingPage() {
                     : propertyTaxResult.warnings;
 
                   return (
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 shadow-subtle">
+                    <div className="mt-2 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 shadow-subtle">
                       <p className="font-semibold text-slate-900">
                         Property Tax: {formatCurrency(propertyTaxResult.annualTax)} / year (
                         {sourceLabel})
