@@ -1115,7 +1115,7 @@ export function MarketingPage() {
                     : propertyTaxResult.warnings;
 
                   return (
-                    <div className="mt-2 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 shadow-subtle">
+                    <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 shadow-subtle">
                       <p className="font-semibold text-slate-900">
                         Property Tax: {formatCurrency(propertyTaxResult.annualTax)} / year (
                         {sourceLabel})
