@@ -662,7 +662,7 @@ export function MarketingPage() {
             <button
               type="button"
               onClick={openModal}
-              className="rounded-xl border border-slate-300 bg-white px-8 py-4 text-lg font-semibold text-slate-800 shadow-sm transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
+              className="rounded-xl bg-slateBlue px-8 py-4 text-lg font-semibold text-white shadow-subtle transition-all duration-200 hover:bg-[#17314f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
             >
               Transaction Summary
             </button>
