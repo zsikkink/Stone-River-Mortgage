@@ -1,6 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+  concatTransformationMatrix,
+  PDFDocument,
+  PDFFont,
+  PDFImage,
+  PDFPage,
+  popGraphicsState,
+  pushGraphicsState,
+  StandardFonts,
+  rgb
+} from "pdf-lib";
 import { NextResponse } from "next/server";
 import { calculateAprAnnual } from "@/lib/apr/calc";
 import { MINNESOTA_ADDRESS_ONLY_MESSAGE } from "@/lib/constants";
@@ -37,6 +47,48 @@ type CostRow = {
 type CostGroup = {
   heading: string;
   rows: CostRow[];
+};
+
+type PdfLogoAsset = {
+  width: number;
+  height: number;
+  draw: (params: {
+    page: PDFPage;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    wordmarkFont: PDFFont;
+  }) => void;
+};
+
+type SvgLogoTransform = {
+  translateX: number;
+  translateY: number;
+  scaleX: number;
+  scaleY: number;
+};
+
+type SvgLogoPath = {
+  d: string;
+  fill: ReturnType<typeof rgb>;
+  transform: SvgLogoTransform;
+};
+
+type SvgLogoTextLine = {
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  fill: ReturnType<typeof rgb>;
+  transform: SvgLogoTransform;
+};
+
+type ParsedSvgLogo = {
+  width: number;
+  height: number;
+  paths: SvgLogoPath[];
+  textLines: SvgLogoTextLine[];
 };
 
 const APPRAISAL_PROMO_END_EXCLUSIVE = new Date("2026-05-01T00:00:00-05:00");
@@ -371,6 +423,200 @@ function roundToCents(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function getAttributeValue(source: string, attribute: string): string | null {
+  const pattern = new RegExp(`${attribute}="([^"]*)"`);
+  const match = source.match(pattern);
+  return match?.[1] ?? null;
+}
+
+function getStyleValue(style: string | null, property: string): string | null {
+  if (!style) {
+    return null;
+  }
+
+  const segments = style.split(";");
+  for (const segment of segments) {
+    const [rawKey, rawValue] = segment.split(":");
+    if (rawKey?.trim() === property) {
+      return rawValue?.trim() ?? null;
+    }
+  }
+
+  return null;
+}
+
+function parseColorValue(value: string | null): ReturnType<typeof rgb> | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "none") {
+    return null;
+  }
+
+  const hexMatch = normalized.match(/^#([0-9a-f]{6})$/i);
+  if (!hexMatch) {
+    if (normalized === "#000" || normalized === "black") {
+      return rgb(0, 0, 0);
+    }
+    if (normalized === "#fff" || normalized === "white") {
+      return rgb(1, 1, 1);
+    }
+    return null;
+  }
+
+  const hex = hexMatch[1];
+  const red = Number.parseInt(hex.slice(0, 2), 16) / 255;
+  const green = Number.parseInt(hex.slice(2, 4), 16) / 255;
+  const blue = Number.parseInt(hex.slice(4, 6), 16) / 255;
+  return rgb(red, green, blue);
+}
+
+function parseTransformValue(value: string | null): SvgLogoTransform {
+  const fallback: SvgLogoTransform = {
+    translateX: 0,
+    translateY: 0,
+    scaleX: 1,
+    scaleY: 1
+  };
+
+  if (!value) {
+    return fallback;
+  }
+
+  const translateMatch = value.match(
+    /translate\(\s*([-\d.]+)(?:[\s,]+([-\d.]+))?\s*\)/i
+  );
+  const scaleMatch = value.match(
+    /scale\(\s*([-\d.]+)(?:[\s,]+([-\d.]+))?\s*\)/i
+  );
+
+  return {
+    translateX: translateMatch ? Number.parseFloat(translateMatch[1]) : 0,
+    translateY: translateMatch?.[2]
+      ? Number.parseFloat(translateMatch[2])
+      : 0,
+    scaleX: scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1,
+    scaleY: scaleMatch?.[2] ? Number.parseFloat(scaleMatch[2]) : scaleMatch
+      ? Number.parseFloat(scaleMatch[1])
+      : 1
+  };
+}
+
+function parseSimpleLogoSvg(svgMarkup: string): ParsedSvgLogo {
+  const width = Number.parseFloat(getAttributeValue(svgMarkup, "width") || "");
+  const height = Number.parseFloat(getAttributeValue(svgMarkup, "height") || "");
+
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    throw new Error("Simple logo SVG is missing width/height attributes.");
+  }
+
+  const groupMatches = Array.from(
+    svgMarkup.matchAll(/<g\b([^>]*)>([\s\S]*?)<\/g>/gi)
+  );
+  const paths: SvgLogoPath[] = [];
+  const textLines: SvgLogoTextLine[] = [];
+
+  for (const groupMatch of groupMatches) {
+    const groupAttributes = groupMatch[1] ?? "";
+    const groupBody = groupMatch[2] ?? "";
+    const groupTransform = parseTransformValue(
+      getAttributeValue(groupAttributes, "transform")
+    );
+
+    const pathMatches = Array.from(groupBody.matchAll(/<path\b([^>]*)\/>/gi));
+    for (const pathMatch of pathMatches) {
+      const pathAttributes = pathMatch[1] ?? "";
+      const d = getAttributeValue(pathAttributes, "d");
+      if (!d) {
+        continue;
+      }
+
+      const fill =
+        parseColorValue(
+          getStyleValue(getAttributeValue(pathAttributes, "style"), "fill")
+        ) ??
+        parseColorValue(getAttributeValue(pathAttributes, "fill")) ??
+        rgb(0, 0, 0);
+
+      paths.push({
+        d,
+        fill,
+        transform: groupTransform
+      });
+    }
+
+    const textMatch = groupBody.match(/<text\b([^>]*)>([\s\S]*?)<\/text>/i);
+    if (!textMatch) {
+      continue;
+    }
+
+    const textAttributes = textMatch[1] ?? "";
+    const textBody = textMatch[2] ?? "";
+    const fontSize = Number.parseFloat(
+      getAttributeValue(textAttributes, "font-size") || "12"
+    );
+    const defaultFill =
+      parseColorValue(
+        getStyleValue(getAttributeValue(textAttributes, "style"), "fill")
+      ) ?? rgb(0, 0, 0);
+
+    const lineMap = new Map<
+      string,
+      { y: number; x: number; text: string; fill: ReturnType<typeof rgb> }
+    >();
+    const tspanMatches = Array.from(textBody.matchAll(/<tspan\b([^>]*)>([\s\S]*?)<\/tspan>/gi));
+
+    for (const tspanMatch of tspanMatches) {
+      const tspanAttributes = tspanMatch[1] ?? "";
+      const text = (tspanMatch[2] ?? "").replace(/\s+/g, " ");
+      const x = Number.parseFloat(getAttributeValue(tspanAttributes, "x") || "0");
+      const y = Number.parseFloat(getAttributeValue(tspanAttributes, "y") || "0");
+      const fill =
+        parseColorValue(
+          getStyleValue(getAttributeValue(tspanAttributes, "style"), "fill")
+        ) ?? defaultFill;
+      const lineKey = y.toFixed(2);
+      const existing = lineMap.get(lineKey);
+
+      if (!existing) {
+        lineMap.set(lineKey, { x, y, text, fill });
+        continue;
+      }
+
+      lineMap.set(lineKey, {
+        x: Math.min(existing.x, x),
+        y,
+        text: `${existing.text}${text}`,
+        fill: existing.fill
+      });
+    }
+
+    for (const line of lineMap.values()) {
+      textLines.push({
+        text: line.text.trim(),
+        x: line.x,
+        y: line.y,
+        fontSize,
+        fill: line.fill,
+        transform: groupTransform
+      });
+    }
+  }
+
+  if (paths.length === 0) {
+    throw new Error("Simple logo SVG did not contain any parseable paths.");
+  }
+
+  return {
+    width,
+    height,
+    paths,
+    textLines: textLines.sort((left, right) => left.y - right.y)
+  };
+}
+
 function getMortgageInsuranceFactor(downPaymentPercent: number): number {
   if (!Number.isFinite(downPaymentPercent) || downPaymentPercent <= 0) {
     return 0;
@@ -462,11 +708,74 @@ function calculateDaysThroughMonthEnd(closingDate: Date): number {
 
 async function maybeLoadLogo(pdfDoc: PDFDocument) {
   try {
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
-    const bytes = await fs.readFile(logoPath);
-    return await pdfDoc.embedPng(bytes);
+    const svgPath = path.join(process.cwd(), "public", "simple-logo.svg");
+    const svgMarkup = await fs.readFile(svgPath, "utf8");
+    const parsedLogo = parseSimpleLogoSvg(svgMarkup);
+
+    return {
+      width: parsedLogo.width,
+      height: parsedLogo.height,
+      draw: ({ page, x, y, width, height, wordmarkFont }) => {
+        const scale = Math.min(width / parsedLogo.width, height / parsedLogo.height);
+        const renderedHeight = parsedLogo.height * scale;
+
+        // Draw vector icon paths in a flipped coordinate system so SVG path data
+        // keeps its original orientation in PDF space.
+        page.pushOperators(
+          pushGraphicsState(),
+          concatTransformationMatrix(scale, 0, 0, -scale, x, y + renderedHeight)
+        );
+
+        for (const pathEntry of parsedLogo.paths) {
+          page.drawSvgPath(pathEntry.d, {
+            x: pathEntry.transform.translateX,
+            y: pathEntry.transform.translateY,
+            scale: pathEntry.transform.scaleX,
+            color: pathEntry.fill
+          });
+        }
+
+        page.pushOperators(popGraphicsState());
+
+        for (const line of parsedLogo.textLines) {
+          const lineFontSize = line.fontSize * line.transform.scaleY * scale;
+          const lineX = x + (line.transform.translateX + line.x * line.transform.scaleX) * scale;
+          const lineY =
+            y +
+            renderedHeight -
+            (line.transform.translateY + line.y * line.transform.scaleY) * scale;
+
+          page.drawText(line.text, {
+            x: lineX,
+            y: lineY,
+            size: lineFontSize,
+            font: wordmarkFont,
+            color: line.fill
+          });
+        }
+      }
+    } satisfies PdfLogoAsset;
   } catch {
-    return null;
+    try {
+      const logoPath = path.join(process.cwd(), "public", "logo.png");
+      const bytes = await fs.readFile(logoPath);
+      const pngImage = await pdfDoc.embedPng(bytes);
+
+      return {
+        width: pngImage.width,
+        height: pngImage.height,
+        draw: ({ page, x, y, width, height }) => {
+          page.drawImage(pngImage, {
+            x,
+            y,
+            width,
+            height
+          });
+        }
+      } satisfies PdfLogoAsset;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -736,6 +1045,7 @@ export async function POST(request: Request) {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontBoldItalic = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+    const logoWordmarkFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const logoImage = await maybeLoadLogo(pdfDoc);
     const equalHousingLogo = await maybeLoadEqualHousingLogo(pdfDoc);
 
@@ -765,11 +1075,13 @@ export async function POST(request: Request) {
       const logoTopY = logoY + logoHeight;
       summaryTitleY = logoTopY - 16;
 
-      page.drawImage(logoImage, {
+      logoImage.draw({
+        page,
         x: logoX,
         y: logoY,
         width: logoWidth,
-        height: logoHeight
+        height: logoHeight,
+        wordmarkFont: logoWordmarkFont
       });
     } else {
       const fallbackLogoText = "Stone River Mortgage";

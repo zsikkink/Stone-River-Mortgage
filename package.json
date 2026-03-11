@@ -21,7 +21,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
-    "verify": "npm run typecheck && npm test && npm run build",
+    "verify": "npm test && npm run build && npm run typecheck",
     "test": "vitest run",
     "check:carver-tls": "node scripts/check-carver-tls.mjs"
   },

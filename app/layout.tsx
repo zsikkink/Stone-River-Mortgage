@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
+
+const cormorantGaramond = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-cormorant-garamond",
+  display: "swap"
+});
 
 export const metadata: Metadata = {
   title: "Stone River Mortgage",
@@ -24,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={cormorantGaramond.variable}>{children}</body>
     </html>
   );
 }

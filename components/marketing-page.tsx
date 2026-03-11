@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { MINNESOTA_ADDRESS_ONLY_MESSAGE } from "@/lib/constants";
 import { getLoanAmountBoundsMessage } from "@/lib/loanAmount";
@@ -13,6 +13,8 @@ const PHONE_DISPLAY = "612.850.2018";
 const PHONE_LINK = "tel:+16128502018";
 const DEFAULT_TRANSACTION_SUMMARY_PDF_FILENAME =
   "Stone River Mortgage Transaction Summary.pdf";
+const PDF_PREVIEW_WIDTH = 612;
+const PDF_PREVIEW_HEIGHT = 792;
 const STREET_SUFFIX_ABBREVIATIONS = new Set([
   "RD",
   "ST",
@@ -174,40 +176,6 @@ function buildTransactionSummaryFilename(params: {
   return `${safeStreet} - ${downPaymentLabel} Down.pdf`;
 }
 
-function LogoShell({
-  className,
-  priority = false,
-  style
-}: {
-  className: string;
-  priority?: boolean;
-  style?: CSSProperties;
-}) {
-  const [logoError, setLogoError] = useState(false);
-
-  return (
-    <div className={className} style={style} aria-label="Stone River Mortgage logo">
-      {logoError ? (
-        <div className="flex min-h-[7rem] w-full items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-100 to-slate-50 px-4 text-center text-sm font-medium tracking-wide text-slate-500">
-          Add logo at /public/logo.png
-        </div>
-      ) : (
-        <Image
-          src="/logo.png"
-          alt="Stone River Mortgage logo"
-          width={1200}
-          height={400}
-          className="h-auto w-full object-contain"
-          style={{ maxWidth: "100%", height: "auto" }}
-          priority={priority}
-          onError={() => setLogoError(true)}
-          sizes="(max-width: 640px) 90vw, 460px"
-        />
-      )}
-    </div>
-  );
-}
-
 export function MarketingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -240,6 +208,8 @@ export function MarketingPage() {
   );
   const [shareError, setShareError] = useState<string | null>(null);
   const previewRef = useRef<HTMLElement | null>(null);
+  const pdfPreviewViewportRef = useRef<HTMLDivElement | null>(null);
+  const [pdfPreviewScale, setPdfPreviewScale] = useState(1);
 
   const downPaymentPercent = useMemo(() => {
     if (downPaymentOption === "custom") {
@@ -288,6 +258,53 @@ export function MarketingPage() {
       if (previewUrl) {
         URL.revokeObjectURL(previewUrl);
       }
+    };
+  }, [previewUrl]);
+
+  useEffect(() => {
+    const node = pdfPreviewViewportRef.current;
+    if (!node) {
+      return;
+    }
+
+    let frameId = 0;
+
+    const updateScale = () => {
+      const availableWidth = node.clientWidth;
+      const widthScale = availableWidth / PDF_PREVIEW_WIDTH;
+      const nextScale = Math.min(widthScale, 1);
+      setPdfPreviewScale(Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1);
+    };
+
+    const scheduleUpdate = () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        updateScale();
+      });
+    };
+
+    scheduleUpdate();
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        scheduleUpdate();
+      });
+      observer.observe(node);
+    }
+
+    window.addEventListener("resize", scheduleUpdate);
+    window.visualViewport?.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.visualViewport?.removeEventListener("resize", scheduleUpdate);
     };
   }, [previewUrl]);
 
@@ -603,7 +620,7 @@ export function MarketingPage() {
         const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
         if (!opened) {
           throw new Error(
-            "Unable to open the PDF for sharing. Please allow pop-ups or use Download PDF."
+            "Unable to open the PDF for sharing. Please allow pop-ups and try again."
           );
         }
         return;
@@ -635,9 +652,23 @@ export function MarketingPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-end gap-4 px-4 py-3 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-100">
+      <header
+        className="fixed inset-x-0 top-0 z-30 min-h-[4.25rem] border-b border-slate-200 bg-white shadow-[0_1px_0_rgba(15,23,42,0.04)] sm:bg-white/90 sm:backdrop-blur"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="mx-auto flex min-h-[4.25rem] max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center sm:h-11 sm:w-11">
+            <Image
+              src="/tree.svg"
+              alt=""
+              width={44}
+              height={44}
+              priority
+              aria-hidden="true"
+              className="h-10 w-10 object-contain sm:h-11 sm:w-11"
+            />
+          </div>
           <a
             href={PHONE_LINK}
             className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
@@ -647,33 +678,37 @@ export function MarketingPage() {
         </div>
       </header>
 
-      <main>
-        <section className="mx-auto flex max-w-6xl flex-col items-center px-4 pb-16 pt-5 text-center sm:px-6 sm:pt-8 lg:px-8">
-          <LogoShell
-            className="w-full max-w-[31rem]"
-            style={{ width: "min(100%, 31rem)" }}
-            priority
-          />
-          <h1 className="mt-8 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            Exceptional Rates for Exceptional Clients
-          </h1>
+      <main style={{ paddingTop: "calc(4.25rem + env(safe-area-inset-top))" }}>
+        <section className="mx-auto flex max-w-6xl flex-col items-center px-4 pb-16 pt-6 text-center sm:px-6 sm:pt-10 lg:px-8">
+          <div
+            aria-label="Stone River Mortgage"
+            className="mt-4 whitespace-nowrap font-[family-name:var(--font-cormorant-garamond)] text-[2.6rem] font-bold leading-[0.9] tracking-[-0.04em] text-black sm:text-[3.2rem] lg:text-[3.4rem]"
+          >
+            <span>Stone River</span>
+            <span className="ml-2 sm:ml-3">Mortgage</span>
+          </div>
 
-          <div className="mt-8 flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:justify-center">
-            <button
-              type="button"
-              onClick={openModal}
-              className="rounded-xl bg-slateBlue px-8 py-4 text-lg font-semibold text-white shadow-subtle transition-all duration-200 hover:bg-[#17314f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
-            >
-              Transaction Summary
-            </button>
-            <a
-              href={APPLY_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-xl bg-slateBlue px-8 py-4 text-lg font-semibold text-white shadow-subtle transition-all duration-200 hover:bg-[#17314f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
-            >
-              Apply Now
-            </a>
+          <div className="mt-12 w-full max-w-[34rem] rounded-[1.75rem] border border-slate-200/90 bg-white/90 p-5 shadow-subtle backdrop-blur-sm sm:p-6">
+            <h2 className="text-center text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+              Estimate Your Home Purchase
+            </h2>
+            <div className="mt-4 flex w-full flex-col items-center gap-3 md:flex-row md:justify-center">
+              <button
+                type="button"
+                onClick={openModal}
+                className="inline-flex w-full max-w-[18rem] items-center justify-center rounded-2xl bg-slateBlue px-6 py-3.5 text-lg font-bold text-white shadow-[0_2px_6px_rgba(15,23,42,0.12)] transition-all duration-200 hover:bg-[#17314f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 md:w-auto md:min-w-[13.5rem]"
+              >
+                Transaction Summary
+              </button>
+              <a
+                href={APPLY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full max-w-[18rem] items-center justify-center rounded-2xl border-2 border-slate-300 bg-white px-6 py-3 text-lg font-bold text-slateBlue shadow-[0_2px_6px_rgba(15,23,42,0.1)] transition-all duration-200 hover:border-slateBlue/70 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 md:w-auto md:min-w-[13.5rem]"
+              >
+                Apply Now
+              </a>
+            </div>
           </div>
         </section>
 
@@ -683,127 +718,152 @@ export function MarketingPage() {
             className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8"
             aria-live="polite"
           >
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-subtle sm:p-8">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-                  Preview
-                </h2>
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={handleSharePdf}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 sm:w-auto"
-                  >
-                    Share PDF
-                  </button>
-                  <a
-                    href={previewUrl}
-                    download={previewFilename}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 sm:w-auto"
-                  >
-                    Download PDF
-                  </a>
-                </div>
-              </div>
-              {shareError ? (
-                <p className="mt-2 text-sm text-red-700">{shareError}</p>
-              ) : null}
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+                Preview
+              </h2>
+              <button
+                type="button"
+                onClick={handleSharePdf}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  className="h-4 w-4"
+                >
+                  <path
+                    d="M7.5 6.5 10 4m0 0 2.5 2.5M10 4v7"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M5.5 8.75v5.75A1.75 1.75 0 0 0 7.25 16.25h5.5a1.75 1.75 0 0 0 1.75-1.75V8.75"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                Share
+              </button>
+            </div>
+            {shareError ? (
+              <p className="mt-2 text-sm text-red-700">{shareError}</p>
+            ) : null}
 
-              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                <div className="mx-auto w-full max-w-[920px]">
+            <div className="mt-5">
+              <div ref={pdfPreviewViewportRef} className="mx-auto w-full overflow-x-auto">
+                <div
+                  className="relative mx-auto overflow-hidden"
+                  style={{
+                    width: PDF_PREVIEW_WIDTH * pdfPreviewScale,
+                    height: PDF_PREVIEW_HEIGHT * pdfPreviewScale
+                  }}
+                >
                   <iframe
-                    src={`${previewUrl}#page=1&zoom=page-fit&toolbar=0&navpanes=0&scrollbar=0`}
+                    src={`${previewUrl}#page=1&toolbar=0&navpanes=0&scrollbar=0`}
                     title="Transaction Summary PDF Preview"
-                    className="aspect-[8.5/11] w-full border-0"
+                    scrolling="no"
+                    className="absolute left-0 top-0 block border-0"
+                    style={{
+                      width: PDF_PREVIEW_WIDTH,
+                      height: PDF_PREVIEW_HEIGHT,
+                      transform: `scale(${pdfPreviewScale})`,
+                      transformOrigin: "top left"
+                    }}
                   />
                 </div>
               </div>
-
-              {propertyTaxResult
-                ? (() => {
-                    const requestedTaxYear =
-                      propertyTaxResult.requestedTaxYear ??
-                      propertyTaxResult.details?.requested_tax_year ??
-                      null;
-                    const actualTaxYearUsed =
-                      propertyTaxResult.actualTaxYearUsed ??
-                      propertyTaxResult.details?.actual_tax_year_used ??
-                      null;
-                    const yearMatchStatus =
-                      propertyTaxResult.yearMatchStatus ??
-                      propertyTaxResult.details?.year_match_status ??
-                      "unknown";
-                    const showYearMismatchWarning =
-                      yearMatchStatus === "latest_available_used" &&
-                      Boolean(requestedTaxYear) &&
-                      Boolean(actualTaxYearUsed);
-                    const sourceLabel =
-                      propertyTaxResult.source === "County Retrieved"
-                        ? actualTaxYearUsed
-                          ? yearMatchStatus === "latest_available_used"
-                            ? `County Retrieved, ${actualTaxYearUsed} data`
-                            : `County Retrieved, ${actualTaxYearUsed}`
-                          : "County Retrieved"
-                        : propertyTaxResult.source;
-                    const filteredWarnings = showYearMismatchWarning
-                      ? propertyTaxResult.warnings.filter(
-                          (warning) =>
-                            !(
-                              /requested tax year/i.test(warning) &&
-                              /latest available county data/i.test(warning)
-                            )
-                        )
-                      : propertyTaxResult.warnings;
-
-                    return (
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                        <p className="font-semibold text-slate-900">
-                          Property Tax: {formatCurrency(propertyTaxResult.annualTax)} / year (
-                          {sourceLabel})
-                        </p>
-                        {showYearMismatchWarning ? (
-                          <p className="mt-1 text-xs text-amber-700">
-                            Requested {requestedTaxYear}; latest available county data is{" "}
-                            {actualTaxYearUsed}.
-                          </p>
-                        ) : null}
-                        <p className="mt-1">
-                          Monthly Tax Escrow Estimate:{" "}
-                          <span className="font-semibold text-slate-900">
-                            {formatCurrency(propertyTaxResult.annualTax / 12)}
-                          </span>
-                        </p>
-                        {propertyTaxResult.rateUsed ? (
-                          <p className="mt-1 text-xs text-slate-600">
-                            Estimated using{" "}
-                            {propertyTaxResult.countyUsed || verifiedAddress?.county || "Minnesota"}{" "}
-                            rate ({(propertyTaxResult.rateUsed * 100).toFixed(2)}%).
-                          </p>
-                        ) : null}
-                        {filteredWarnings.length > 0 ? (
-                          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-800">
-                            {filteredWarnings.map((warning) => (
-                              <li key={warning}>{warning}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        <p className="mt-2 text-xs text-slate-600">
-                          Property tax amounts are estimates unless verified. Actual taxes
-                          may vary based on assessed value, homestead status, and local
-                          levies.
-                        </p>
-                      </div>
-                    );
-                  })()
-                : null}
             </div>
+
+            {propertyTaxResult
+              ? (() => {
+                  const requestedTaxYear =
+                    propertyTaxResult.requestedTaxYear ??
+                    propertyTaxResult.details?.requested_tax_year ??
+                    null;
+                  const actualTaxYearUsed =
+                    propertyTaxResult.actualTaxYearUsed ??
+                    propertyTaxResult.details?.actual_tax_year_used ??
+                    null;
+                  const yearMatchStatus =
+                    propertyTaxResult.yearMatchStatus ??
+                    propertyTaxResult.details?.year_match_status ??
+                    "unknown";
+                  const showYearMismatchWarning =
+                    yearMatchStatus === "latest_available_used" &&
+                    Boolean(requestedTaxYear) &&
+                    Boolean(actualTaxYearUsed);
+                  const sourceLabel =
+                    propertyTaxResult.source === "County Retrieved"
+                      ? actualTaxYearUsed
+                        ? yearMatchStatus === "latest_available_used"
+                          ? `County Retrieved, ${actualTaxYearUsed} data`
+                          : `County Retrieved, ${actualTaxYearUsed}`
+                        : "County Retrieved"
+                      : propertyTaxResult.source;
+                  const filteredWarnings = showYearMismatchWarning
+                    ? propertyTaxResult.warnings.filter(
+                        (warning) =>
+                          !(
+                            /requested tax year/i.test(warning) &&
+                            /latest available county data/i.test(warning)
+                          )
+                      )
+                    : propertyTaxResult.warnings;
+
+                  return (
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 shadow-subtle">
+                      <p className="font-semibold text-slate-900">
+                        Property Tax: {formatCurrency(propertyTaxResult.annualTax)} / year (
+                        {sourceLabel})
+                      </p>
+                      {showYearMismatchWarning ? (
+                        <p className="mt-1 text-xs text-amber-700">
+                          Requested {requestedTaxYear}; latest available county data is{" "}
+                          {actualTaxYearUsed}.
+                        </p>
+                      ) : null}
+                      <p className="mt-1">
+                        Monthly Tax Escrow Estimate:{" "}
+                        <span className="font-semibold text-slate-900">
+                          {formatCurrency(propertyTaxResult.annualTax / 12)}
+                        </span>
+                      </p>
+                      {propertyTaxResult.rateUsed ? (
+                        <p className="mt-1 text-xs text-slate-600">
+                          Estimated using{" "}
+                          {propertyTaxResult.countyUsed || verifiedAddress?.county || "Minnesota"}{" "}
+                          rate ({(propertyTaxResult.rateUsed * 100).toFixed(2)}%).
+                        </p>
+                      ) : null}
+                      {filteredWarnings.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-800">
+                          {filteredWarnings.map((warning) => (
+                            <li key={warning}>{warning}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <p className="mt-2 text-xs text-slate-600">
+                        Property tax amounts are estimates unless verified. Actual taxes
+                        may vary based on assessed value, homestead status, and local
+                        levies.
+                      </p>
+                    </div>
+                  );
+                })()
+              : null}
           </section>
         ) : null}
 
-        <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-subtle sm:p-10">
+        <section>
+          <div className="mx-auto max-w-6xl px-4 pb-12 pt-7 sm:px-6 sm:pb-14 sm:pt-9 lg:px-8">
             <div className="grid gap-6 md:grid-cols-3">
-              <article className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+              <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-subtle">
                 <h3 className="text-lg font-semibold text-slate-900">Our Business Delivers</h3>
                 <ul className="mt-4 list-outside list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700">
                   <li>Lower mortgage rates</li>
@@ -814,18 +874,18 @@ export function MarketingPage() {
                 </ul>
               </article>
 
-              <article className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
-                <h3 className="text-lg font-semibold text-slate-900">Our Mortgage Clients Have</h3>
+              <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-subtle">
+                <h3 className="text-lg font-semibold text-slate-900">Our Clients Have</h3>
                 <ul className="mt-4 list-outside list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700">
                   <li>Good credit</li>
                   <li>Home equity / assets</li>
                   <li>Organization skills</li>
                   <li>Price and service focus</li>
-                  <li>Loan $300,000 - $2,000,000</li>
+                  <li>Borrow $125,000+</li>
                 </ul>
               </article>
 
-              <article className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+              <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-subtle">
                 <h3 className="text-lg font-semibold text-slate-900">
                   Licenced in Minnesota and Florida
                 </h3>
@@ -858,7 +918,7 @@ export function MarketingPage() {
 
       {isModalOpen ? (
         <div
-          className="fixed inset-0 z-40 flex items-end bg-slate-900/50 p-4 sm:items-center sm:justify-center"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4"
           onClick={(event) => {
             if (event.target === event.currentTarget) {
               closeModal();
@@ -899,7 +959,7 @@ export function MarketingPage() {
                   htmlFor="property-address"
                   className="mb-1.5 block text-sm font-medium text-slate-800"
                 >
-                  Property Address
+                  Minnesota Property Address
                 </label>
                 <AddressAutocomplete
                   id="property-address"
@@ -953,7 +1013,7 @@ export function MarketingPage() {
                     onChange={(event) => handlePurchasePriceChange(event.target.value)}
                     onBlur={handlePurchasePriceBlur}
                     placeholder="389,900.00"
-                    className="w-full rounded-xl border border-slate-300 py-2.5 pl-7 pr-3 text-sm text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20"
+                    className="w-full rounded-xl border border-slate-300 py-2.5 pl-7 pr-3 text-base text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20 sm:text-sm"
                   />
                 </div>
                 {errors.purchasePrice ? (
@@ -1064,7 +1124,7 @@ export function MarketingPage() {
                             setCustomDownPaymentPercent(event.target.value)
                           }
                           placeholder="18"
-                          className="w-full rounded-xl border border-slate-300 py-2.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20"
+                          className="w-full rounded-xl border border-slate-300 py-2.5 pl-3 pr-8 text-base text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20 sm:text-sm"
                         />
                         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
                           %
@@ -1085,7 +1145,7 @@ export function MarketingPage() {
                           }
                           onBlur={handleCustomDownPaymentAmountBlur}
                           placeholder="75,000"
-                          className="w-full rounded-xl border border-slate-300 py-2.5 pl-7 pr-3 text-sm text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20"
+                          className="w-full rounded-xl border border-slate-300 py-2.5 pl-7 pr-3 text-base text-slate-900 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slateBlue/20 sm:text-sm"
                         />
                       </div>
                     )}
