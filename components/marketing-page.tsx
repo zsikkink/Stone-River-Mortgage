@@ -717,6 +717,7 @@ export function MarketingPage() {
             ref={previewRef}
             className="mx-auto max-w-6xl px-4 pb-20 sm:px-6 lg:px-8"
             aria-live="polite"
+            style={{ scrollMarginTop: "calc(5.5rem + env(safe-area-inset-top))" }}
           >
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
@@ -1032,10 +1033,11 @@ export function MarketingPage() {
                   id="down-payment"
                   role="group"
                   aria-label="Down payment options"
-                  className="flex flex-wrap gap-2"
+                  className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
                 >
                   {DOWN_PAYMENT_BUTTONS.map((option) => {
                     const isActive = downPaymentOption === option.value;
+                    const isCustomOption = option.value === "custom";
                     return (
                       <button
                         key={option.value}
@@ -1048,7 +1050,7 @@ export function MarketingPage() {
                             loanAmount: undefined
                           }));
                         }}
-                        className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                        className={`${isCustomOption ? "justify-self-start px-3 sm:px-4" : "w-full min-w-0 px-2 sm:w-auto sm:px-4"} rounded-xl border py-2 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 sm:text-sm ${
                           isActive
                             ? "border-emerald-600 bg-emerald-600 text-white shadow-sm focus-visible:ring-emerald-600"
                             : "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50 focus-visible:ring-slateBlue"
