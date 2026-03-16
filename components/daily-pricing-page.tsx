@@ -102,6 +102,8 @@ type PricingResponse = {
   };
 };
 
+type DailyPricingTab = "pricing" | "activity";
+
 type CoreNumericFieldKey =
   | "interestRate"
   | "discountPointFactor"
@@ -321,6 +323,7 @@ export function DailyPricingPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<DailyPricingTab>("pricing");
 
   const loadPricing = async () => {
     setLoading(true);
@@ -622,12 +625,6 @@ export function DailyPricingPage() {
           </p>
         ) : null}
 
-        {pricing ? (
-          <p className="mt-4 text-sm text-slate-600">
-            Last updated: {formatLastUpdated(pricing)}
-          </p>
-        ) : null}
-
         {draftPricing ? (
           <div className="mt-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -642,67 +639,404 @@ export function DailyPricingPage() {
               </button>
             </div>
 
-            {analytics ? (
-              <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Activity
-                </h2>
-                <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                  <p>PDFs created: {analytics.pdfGeneratedCount}</p>
-                  <p>Unique PDF addresses: {analytics.uniqueAddressCount}</p>
-                  <p>
-                    Current/previous-year unique-address success ({analytics.currentYear}/
-                    {analytics.previousYear}):{" "}
-                    {analytics.currentOrPreviousYearSuccessfulAddressCount} /{" "}
-                    {analytics.uniqueAddressCount}{" "}
-                    {typeof analytics.currentOrPreviousYearSuccessRate === "number"
-                      ? `(${(analytics.currentOrPreviousYearSuccessRate * 100).toFixed(1)}% success)`
-                      : "(n/a)"}
-                  </p>
-                  <p>
-                    Unique non-metro addresses: {analytics.nonMetroUniqueAddressCount}
-                  </p>
-                </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              <div
+                role="tablist"
+                aria-label="Daily pricing sections"
+                className="grid grid-cols-2 gap-1"
+              >
+                {(
+                  [
+                    { id: "pricing", label: "Pricing" },
+                    { id: "activity", label: "Activity" }
+                  ] as const
+                ).map((tab) => {
+                  const isActive = activeTab === tab.id;
 
-                <div className="mt-3">
-                  <h3 className="text-sm font-semibold text-slate-800">
-                    Successful PDF Addresses
-                  </h3>
-                  {analytics.trackedAddresses.length === 0 ? (
-                    <p className="mt-1 text-sm text-slate-600">
-                      No successful PDF activity yet.
+                  return (
+                    <button
+                      key={tab.id}
+                      id={`daily-pricing-tab-${tab.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls={`daily-pricing-panel-${tab.id}`}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2 ${
+                        isActive
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {activeTab === "pricing" ? (
+              <section
+                id="daily-pricing-panel-pricing"
+                role="tabpanel"
+                aria-labelledby="daily-pricing-tab-pricing"
+                className="mt-6"
+              >
+                {pricing ? (
+                  <p className="text-sm text-slate-600">
+                    Last updated: {formatLastUpdated(pricing)}
+                  </p>
+                ) : null}
+
+                <form className="mt-6 space-y-8" onSubmit={handleSavePricing}>
+                  <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                    <p className="font-semibold text-slate-800">
+                      How these settings affect the PDF
+                    </p>
+                    <p className="mt-1">
+                      Changes saved here are used by the PDF generator for interest rate,
+                      APR, discount points, insurance estimate, fee lines, and footer text.
+                    </p>
+                    <p className="mt-1">
+                      Mortgage insurance uses fixed factor buckets from down payment %, and
+                      title premiums are calculated by the MN title policy calculator.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      Core Rates and Assumptions
+                    </h2>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      {coreNumericFields.map((field) => (
+                        <div key={field.key}>
+                          <label
+                            htmlFor={`pricing-${field.key}`}
+                            className="mb-1.5 block text-sm font-medium text-slate-800"
+                          >
+                            {field.label}
+                          </label>
+                          <input
+                            id={`pricing-${field.key}`}
+                            type={field.key === "discountPointFactor" ? "text" : "number"}
+                            inputMode={
+                              field.key === "discountPointFactor"
+                                ? "decimal"
+                                : undefined
+                            }
+                            step={
+                              field.key === "discountPointFactor"
+                                ? undefined
+                                : field.step
+                            }
+                            min={
+                              field.key === "discountPointFactor"
+                                ? undefined
+                                : field.min
+                            }
+                            required
+                            value={
+                              field.key === "discountPointFactor"
+                                ? discountPointFactorInput
+                                : draftPricing[field.key]
+                            }
+                            onChange={(event) =>
+                              field.key === "discountPointFactor"
+                                ? setDiscountPointFactorInput(event.target.value)
+                                : updateCoreNumericField(field.key, event.target.value)
+                            }
+                            className={inputClassName}
+                          />
+                          <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
+                        </div>
+                      ))}
+
+                      <div>
+                        <label
+                          htmlFor="pricing-loan-term"
+                          className="mb-1.5 block text-sm font-medium text-slate-800"
+                        >
+                          Loan Term Label
+                        </label>
+                        <input
+                          id="pricing-loan-term"
+                          type="text"
+                          required
+                          value={draftPricing.loanTerm}
+                          onChange={(event) =>
+                            setDraftPricing((previous) =>
+                              previous
+                                ? { ...previous, loanTerm: event.target.value }
+                                : previous
+                            )
+                          }
+                          className={inputClassName}
+                        />
+                        <p className="mt-1.5 text-xs text-slate-500">
+                          Printed on PDF as the Conventional Loan Term value.
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section>
+                    <h2 className="text-lg font-semibold text-slate-900">Fees</h2>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Title policy lines are calculated by the title premium engine and
+                      are not editable in this panel.
+                    </p>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      {feeFields.map((field) => (
+                        <div key={field.key}>
+                          <label
+                            htmlFor={`fee-${field.key}`}
+                            className="mb-1.5 block text-sm font-medium text-slate-800"
+                          >
+                            {field.label} ($)
+                          </label>
+                          <input
+                            id={`fee-${field.key}`}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={draftPricing.fees[field.key]}
+                            onChange={(event) =>
+                              updateFeeField(field.key, event.target.value)
+                            }
+                            className={inputClassName}
+                          />
+                          <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      Footer Text (PDF Source of Truth)
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Editable footer lines currently used by the PDF generator:
+                      Estimated Charges Line and Pricing Updated Prefix.
+                    </p>
+                    <div className="mt-4 grid gap-4">
+                      {footerFields.map((field) => (
+                        <div key={field.key}>
+                          <label
+                            htmlFor={`footer-${field.key}`}
+                            className="mb-1.5 block text-sm font-medium text-slate-800"
+                          >
+                            {field.label}
+                          </label>
+                          <input
+                            id={`footer-${field.key}`}
+                            type="text"
+                            required
+                            value={draftPricing.footer[field.key]}
+                            onChange={(event) =>
+                              updateFooterField(field.key, event.target.value)
+                            }
+                            className={inputClassName}
+                          />
+                          <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                      <p className="font-semibold text-slate-800">
+                        Fixed PDF footer lines (not editable in this panel):
+                      </p>
+                      <p className="mt-1">
+                        Estimate assumes: 780+ credit score, single family residence,
+                        and owner occupied
+                      </p>
+                      <p className="mt-1">
+                        Stone River Mortgage LLC nmls# 2090973, Mike Sikkink nmls#
+                        345256
+                      </p>
+                      <p className="mt-1">HOA dues, if any, are paid separately</p>
+                    </div>
+                  </section>
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center justify-center rounded-xl bg-slateBlue px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#17314f] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
+                  >
+                    {submitting ? "Saving..." : "Save Pricing Settings"}
+                  </button>
+                </form>
+
+                <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    Interest Rate &amp; Discount Point History
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-600">
+                    A record is added when either the interest rate or discount point
+                    factor changes.
+                  </p>
+
+                  {rateHistory.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-600">
+                      No recorded changes yet.
                     </p>
                   ) : (
-                    <ul className="mt-2 space-y-2 text-sm text-slate-700">
-                      {analytics.trackedAddresses.map((record) => (
-                        <li
-                          key={`${record.address}-${record.firstPdfGeneratedAt}`}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                        >
-                          <p className="font-medium text-slate-900">{record.address}</p>
-                          <p className="text-xs text-slate-700">
-                            First PDF: {formatHistoryTimestamp(record.firstPdfGeneratedAt)}
-                          </p>
-                          <p className="text-xs text-slate-700">
-                            PDFs created: {record.pdfGeneratedCount}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-2 py-1.5">When</th>
+                            <th className="px-2 py-1.5">Interest Rate</th>
+                            <th className="px-2 py-1.5">Discount Point Factor</th>
+                            <th className="px-2 py-1.5">Updated By</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {rateHistory.map((entry) => (
+                            <tr key={entry.id}>
+                              <td className="px-2 py-1.5 text-slate-700">
+                                {formatHistoryTimestamp(entry.changedAt)}
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-700">
+                                {entry.interestRate.toFixed(3)}%
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-700">
+                                {entry.discountPointFactor}
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-700">
+                                {entry.changedBy || "unknown"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </section>
+            ) : (
+              <section
+                id="daily-pricing-panel-activity"
+                role="tabpanel"
+                aria-labelledby="daily-pricing-tab-activity"
+                className="mt-6 space-y-6"
+              >
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    Activity
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Successful PDF activity is tracked separately from pricing edits.
+                  </p>
+                  {analytics ? (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          PDFs Created
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {analytics.pdfGeneratedCount}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Unique PDF Addresses
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {analytics.uniqueAddressCount}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Unique Success
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">
+                          {analytics.currentOrPreviousYearSuccessfulAddressCount} /{" "}
+                          {analytics.uniqueAddressCount}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-600">
+                          {analytics.currentYear}/{analytics.previousYear}:{" "}
+                          {typeof analytics.currentOrPreviousYearSuccessRate === "number"
+                            ? `${(analytics.currentOrPreviousYearSuccessRate * 100).toFixed(1)}%`
+                            : "n/a"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                          Non-Metro Addresses
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">
+                          {analytics.nonMetroUniqueAddressCount}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-600">
+                      No successful PDF activity yet.
+                    </p>
                   )}
                 </div>
 
-                <div className="mt-3">
-                  <h3 className="text-sm font-semibold text-slate-800">
-                    County Performance by Unique PDF Address
-                  </h3>
-                  {Object.keys(analytics.countyPerformanceByUniqueAddress).length ===
-                  0 ? (
-                    <p className="mt-1 text-sm text-slate-600">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        Successful PDF Addresses
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Newest successful PDF-producing addresses first.
+                      </p>
+                    </div>
+                  </div>
+
+                  {analytics && analytics.trackedAddresses.length > 0 ? (
+                    <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                      <table className="min-w-full text-left text-sm text-slate-700">
+                        <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">Address</th>
+                            <th className="px-3 py-2 font-medium">County</th>
+                            <th className="px-3 py-2 font-medium">First PDF</th>
+                            <th className="px-3 py-2 text-right font-medium">
+                              PDFs Created
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {analytics.trackedAddresses.map((record) => (
+                            <tr key={`${record.address}-${record.firstPdfGeneratedAt}`}>
+                              <td className="px-3 py-2.5 font-medium text-slate-900">
+                                {record.address}
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-600">
+                                {record.county}
+                              </td>
+                              <td className="px-3 py-2.5 text-slate-600">
+                                {formatHistoryTimestamp(record.firstPdfGeneratedAt)}
+                              </td>
+                              <td className="px-3 py-2.5 text-right text-slate-900">
+                                {record.pdfGeneratedCount}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-600">
                       No successful PDF activity yet.
                     </p>
-                  ) : (
-                    <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    County Performance by Unique PDF Address
+                  </h3>
+                  {analytics &&
+                  Object.keys(analytics.countyPerformanceByUniqueAddress).length > 0 ? (
+                    <ul className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
                       {Object.entries(analytics.countyPerformanceByUniqueAddress)
                         .sort(([leftCounty], [rightCounty]) =>
                           leftCounty.localeCompare(rightCounty)
@@ -732,226 +1066,14 @@ export function DailyPricingPage() {
                           </li>
                         ))}
                     </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-600">
+                      No successful PDF activity yet.
+                    </p>
                   )}
                 </div>
               </section>
-            ) : null}
-
-            <form className="space-y-8" onSubmit={handleSavePricing}>
-              <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
-                <p className="font-semibold text-slate-800">
-                  How these settings affect the PDF
-                </p>
-                <p className="mt-1">
-                  Changes saved here are used by the PDF generator for interest rate, APR,
-                  discount points, insurance estimate, fee lines, and footer text.
-                </p>
-                <p className="mt-1">
-                  Mortgage insurance uses fixed factor buckets from down payment %, and title
-                  premiums are calculated by the MN title policy calculator.
-                </p>
-              </section>
-
-              <section>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Core Rates and Assumptions
-                </h2>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  {coreNumericFields.map((field) => (
-                    <div key={field.key}>
-                      <label
-                        htmlFor={`pricing-${field.key}`}
-                        className="mb-1.5 block text-sm font-medium text-slate-800"
-                      >
-                        {field.label}
-                      </label>
-                      <input
-                        id={`pricing-${field.key}`}
-                        type={field.key === "discountPointFactor" ? "text" : "number"}
-                        inputMode={
-                          field.key === "discountPointFactor" ? "decimal" : undefined
-                        }
-                        step={field.key === "discountPointFactor" ? undefined : field.step}
-                        min={field.key === "discountPointFactor" ? undefined : field.min}
-                        required
-                        value={
-                          field.key === "discountPointFactor"
-                            ? discountPointFactorInput
-                            : draftPricing[field.key]
-                        }
-                        onChange={(event) =>
-                          field.key === "discountPointFactor"
-                            ? setDiscountPointFactorInput(event.target.value)
-                            : updateCoreNumericField(field.key, event.target.value)
-                        }
-                        className={inputClassName}
-                      />
-                      <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
-                    </div>
-                  ))}
-
-                  <div>
-                    <label
-                      htmlFor="pricing-loan-term"
-                      className="mb-1.5 block text-sm font-medium text-slate-800"
-                    >
-                      Loan Term Label
-                    </label>
-                    <input
-                      id="pricing-loan-term"
-                      type="text"
-                      required
-                      value={draftPricing.loanTerm}
-                      onChange={(event) =>
-                        setDraftPricing((previous) =>
-                          previous
-                            ? { ...previous, loanTerm: event.target.value }
-                            : previous
-                        )
-                      }
-                      className={inputClassName}
-                    />
-                    <p className="mt-1.5 text-xs text-slate-500">
-                      Printed on PDF as the Conventional Loan Term value.
-                    </p>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <h2 className="text-lg font-semibold text-slate-900">Fees</h2>
-                <p className="mt-1 text-xs text-slate-600">
-                  Title policy lines are calculated by the title premium engine and are not
-                  editable in this panel.
-                </p>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  {feeFields.map((field) => (
-                    <div key={field.key}>
-                      <label
-                        htmlFor={`fee-${field.key}`}
-                        className="mb-1.5 block text-sm font-medium text-slate-800"
-                      >
-                        {field.label} ($)
-                      </label>
-                      <input
-                        id={`fee-${field.key}`}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        required
-                        value={draftPricing.fees[field.key]}
-                        onChange={(event) =>
-                          updateFeeField(field.key, event.target.value)
-                        }
-                        className={inputClassName}
-                      />
-                      <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Footer Text (PDF Source of Truth)
-                </h2>
-                <p className="mt-1 text-xs text-slate-600">
-                  Editable footer lines currently used by the PDF generator:
-                  Estimated Charges Line and Pricing Updated Prefix.
-                </p>
-                <div className="mt-4 grid gap-4">
-                  {footerFields.map((field) => (
-                    <div key={field.key}>
-                      <label
-                        htmlFor={`footer-${field.key}`}
-                        className="mb-1.5 block text-sm font-medium text-slate-800"
-                      >
-                        {field.label}
-                      </label>
-                      <input
-                        id={`footer-${field.key}`}
-                        type="text"
-                        required
-                        value={draftPricing.footer[field.key]}
-                        onChange={(event) =>
-                          updateFooterField(field.key, event.target.value)
-                        }
-                        className={inputClassName}
-                      />
-                      <p className="mt-1.5 text-xs text-slate-500">{field.hint}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
-                  <p className="font-semibold text-slate-800">
-                    Fixed PDF footer lines (not editable in this panel):
-                  </p>
-                  <p className="mt-1">
-                    Estimate assumes: 780+ credit score, single family residence, and owner
-                    occupied
-                  </p>
-                  <p className="mt-1">
-                    Stone River Mortgage LLC nmls# 2090973, Mike Sikkink nmls# 345256
-                  </p>
-                  <p className="mt-1">HOA dues, if any, are paid separately</p>
-                </div>
-              </section>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex items-center justify-center rounded-xl bg-slateBlue px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#17314f] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slateBlue focus-visible:ring-offset-2"
-              >
-                {submitting ? "Saving..." : "Save Pricing Settings"}
-              </button>
-            </form>
-
-            <section className="mt-8 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <h2 className="text-base font-semibold text-slate-900">
-                Interest Rate &amp; Discount Point History
-              </h2>
-              <p className="mt-1 text-xs text-slate-600">
-                A record is added when either the interest rate or discount point factor
-                changes.
-              </p>
-
-              {rateHistory.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-600">
-                  No recorded changes yet.
-                </p>
-              ) : (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-2 py-1.5">When</th>
-                        <th className="px-2 py-1.5">Interest Rate</th>
-                        <th className="px-2 py-1.5">Discount Point Factor</th>
-                        <th className="px-2 py-1.5">Updated By</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {rateHistory.map((entry) => (
-                        <tr key={entry.id}>
-                          <td className="px-2 py-1.5 text-slate-700">
-                            {formatHistoryTimestamp(entry.changedAt)}
-                          </td>
-                          <td className="px-2 py-1.5 text-slate-700">
-                            {entry.interestRate.toFixed(3)}%
-                          </td>
-                          <td className="px-2 py-1.5 text-slate-700">
-                            {entry.discountPointFactor}
-                          </td>
-                          <td className="px-2 py-1.5 text-slate-700">
-                            {entry.changedBy || "unknown"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+            )}
           </div>
         ) : null}
       </div>
