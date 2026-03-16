@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyPropertyTaxLookupOutcome,
+  type DailyPricingAnalytics,
   getDailyPricingAuthWarning,
   parsePricingConfigUpdate,
+  recordTransactionSummaryGeneratedForAnalytics,
   resolveDailyPricingDataDir,
+  summarizeDailyPricingAnalytics,
   wasCurrentOrPreviousYearRecordFound
 } from "./daily-pricing-store";
 
@@ -157,6 +160,120 @@ describe("classifyPropertyTaxLookupOutcome", () => {
         currentYear: 2026
       })
     ).toBe("failed");
+  });
+});
+
+describe("recordTransactionSummaryGeneratedForAnalytics", () => {
+  it("tracks repeated successful PDFs for the same normalized address", () => {
+    const analytics: DailyPricingAnalytics = {
+      pdfGeneratedCount: 0,
+      addressesByKey: {}
+    };
+
+    recordTransactionSummaryGeneratedForAnalytics(analytics, {
+      address: "123 Main St, Minneapolis, MN, USA",
+      county: "Hennepin",
+      propertyTaxSource: "County Retrieved",
+      propertyTaxActualYearUsed: 2026,
+      currentYear: 2026,
+      generatedAt: "2026-03-16T12:00:00.000Z"
+    });
+    recordTransactionSummaryGeneratedForAnalytics(analytics, {
+      address: " 123 MAIN ST, MINNEAPOLIS, MN ",
+      county: "Hennepin County",
+      propertyTaxSource: "Estimated Using County Rate",
+      propertyTaxActualYearUsed: null,
+      currentYear: 2026,
+      generatedAt: "2026-03-16T13:00:00.000Z"
+    });
+
+    expect(analytics.pdfGeneratedCount).toBe(2);
+    expect(Object.keys(analytics.addressesByKey)).toHaveLength(1);
+
+    const trackedAddress = analytics.addressesByKey["123 main st, minneapolis, mn"];
+    expect(trackedAddress).toMatchObject({
+      address: "123 Main St, Minneapolis, MN",
+      county: "Hennepin",
+      pdfGeneratedCount: 2,
+      firstPdfGeneratedAt: "2026-03-16T12:00:00.000Z",
+      lastPdfGeneratedAt: "2026-03-16T13:00:00.000Z",
+      firstPdfPropertyTaxOutcome: "current_year"
+    });
+  });
+});
+
+describe("summarizeDailyPricingAnalytics", () => {
+  it("uses unique successful PDF addresses as county denominators", () => {
+    const analytics: DailyPricingAnalytics = {
+      pdfGeneratedCount: 0,
+      addressesByKey: {}
+    };
+
+    recordTransactionSummaryGeneratedForAnalytics(analytics, {
+      address: "123 Main St, Minneapolis, MN, USA",
+      county: "Hennepin",
+      propertyTaxSource: "County Retrieved",
+      propertyTaxActualYearUsed: 2026,
+      currentYear: 2026,
+      generatedAt: "2026-03-16T12:00:00.000Z"
+    });
+    recordTransactionSummaryGeneratedForAnalytics(analytics, {
+      address: "123 MAIN ST, MINNEAPOLIS, MN",
+      county: "Hennepin County",
+      propertyTaxSource: "County Retrieved",
+      propertyTaxActualYearUsed: 2026,
+      currentYear: 2026,
+      generatedAt: "2026-03-16T12:30:00.000Z"
+    });
+    recordTransactionSummaryGeneratedForAnalytics(analytics, {
+      address: "500 Lake Rd, Minneapolis, MN",
+      county: "Hennepin County",
+      propertyTaxSource: "Estimated Using County Rate",
+      propertyTaxActualYearUsed: null,
+      currentYear: 2026,
+      generatedAt: "2026-03-16T13:00:00.000Z"
+    });
+    recordTransactionSummaryGeneratedForAnalytics(analytics, {
+      address: "42 River Ave, Mankato, MN",
+      county: "Blue Earth County",
+      propertyTaxSource: "County Retrieved",
+      propertyTaxActualYearUsed: 2025,
+      currentYear: 2026,
+      generatedAt: "2026-03-16T14:00:00.000Z"
+    });
+
+    const summary = summarizeDailyPricingAnalytics({
+      analytics,
+      currentYear: 2026
+    });
+
+    expect(summary.uniqueAddressCount).toBe(3);
+    expect(summary.nonMetroUniqueAddressCount).toBe(1);
+    expect(summary.currentOrPreviousYearSuccessfulAddressCount).toBe(2);
+    expect(summary.currentOrPreviousYearSuccessRate).toBeCloseTo(2 / 3);
+    expect(summary.trackedAddresses.map((record) => record.address)).toEqual([
+      "42 River Ave, Mankato, MN",
+      "500 Lake Rd, Minneapolis, MN",
+      "123 Main St, Minneapolis, MN"
+    ]);
+    expect(summary.trackedAddresses[2]?.pdfGeneratedCount).toBe(2);
+    expect(summary.countyPerformanceByUniqueAddress.Hennepin).toMatchObject({
+      totalUniqueAddresses: 2,
+      currentYearCount: 1,
+      previousYearCount: 0,
+      olderYearCount: 0,
+      failedCount: 1,
+      currentYearRate: 0.5,
+      failedRate: 0.5
+    });
+    expect(summary.countyPerformanceByUniqueAddress["Blue Earth"]).toMatchObject({
+      totalUniqueAddresses: 1,
+      currentYearCount: 0,
+      previousYearCount: 1,
+      olderYearCount: 0,
+      failedCount: 0,
+      previousYearRate: 1
+    });
   });
 });
 

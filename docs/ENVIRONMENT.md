@@ -16,6 +16,8 @@ Address autocomplete runs through internal APIs using `GOOGLE_MAPS_API_KEY` on t
 ## Daily Pricing Persistence
 
 Use KV REST in production to keep pricing + analytics shared across functions.
+The current Daily Pricing analytics series intentionally uses a separate v2 key so
+new activity starts fresh without mutating or deleting legacy analytics data.
 
 | Variable | Required | Notes |
 | --- | --- | --- |
@@ -25,8 +27,9 @@ Use KV REST in production to keep pricing + analytics shared across functions.
 | `KV_REST_API_TOKEN` | Supported alias | Vercel KV naming alias for token. |
 | `UPSTASH_REDIS_REST_URL` | Supported alias | Alternate alias. |
 | `UPSTASH_REDIS_REST_TOKEN` | Supported alias | Alternate alias. |
-| `DAILY_PRICING_KV_KEY` | Optional | Custom key for pricing config. |
-| `DAILY_PRICING_ANALYTICS_KV_KEY` | Optional | Custom key for analytics counters. |
+| `DAILY_PRICING_KV_KEY` | Optional | Custom key for the main Daily Pricing store (config, auth/session data, pricing history). |
+| `DAILY_PRICING_ANALYTICS_V2_KV_KEY` | Optional | Custom key for the current Daily Pricing analytics series. Defaults to `${DAILY_PRICING_KV_KEY}:analytics:v2`. |
+| `DAILY_PRICING_ANALYTICS_KV_KEY` | Legacy only | Older analytics key. The current Daily Pricing analytics flow does not read or write it. |
 
 ## Optional Variables
 
@@ -48,4 +51,5 @@ Use KV REST in production to keep pricing + analytics shared across functions.
 ## Operational Notes
 
 - In serverless environments without KV configured, filesystem fallback is not durable across function instances.
+- The filesystem fallback keeps the main store in `daily-pricing.json` and the current analytics series in `daily-pricing-analytics-v2.json`.
 - `NODE_EXTRA_CA_CERTS` must be exported **before** Node starts; setting it after startup has no effect on the current process.

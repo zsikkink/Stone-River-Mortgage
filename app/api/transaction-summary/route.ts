@@ -26,6 +26,7 @@ export const runtime = "nodejs";
 
 type SummaryPayload = {
   address: string;
+  county?: string | null;
   state?: string | null;
   purchasePrice: number;
   downPaymentPercent: number;
@@ -237,6 +238,14 @@ function getPayloadValidationErrors(input: unknown): string[] {
     (typeof candidate.state === "string" && candidate.state.trim().length > 0);
   if (!hasValidState) {
     errors.push("State is invalid.");
+  }
+
+  const hasValidCounty =
+    typeof candidate.county === "undefined" ||
+    candidate.county === null ||
+    (typeof candidate.county === "string" && candidate.county.trim().length > 0);
+  if (!hasValidCounty) {
+    errors.push("County is invalid.");
   }
 
   return errors;
@@ -1518,7 +1527,13 @@ export async function POST(request: Request) {
     const pdfBytes = await pdfDoc.save();
 
     try {
-      await recordTransactionSummaryGenerated();
+      await recordTransactionSummaryGenerated({
+        address,
+        county: payload.county ?? null,
+        propertyTaxSource: payload.propertyTaxSource,
+        propertyTaxActualYearUsed,
+        generatedAt: new Date().toISOString()
+      });
     } catch (analyticsError) {
       console.warn("Transaction summary analytics update failed", {
         error:

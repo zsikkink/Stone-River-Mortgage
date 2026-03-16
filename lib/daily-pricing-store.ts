@@ -1,6 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isMetroPriorityCounty } from "./propertyTax/strategyRegistry";
 
 export const DAILY_PRICING_AUTH_COOKIE = "srm_dailypricing_session";
 
@@ -20,9 +21,9 @@ const DAILY_PRICING_KV_REST_TOKEN =
   "";
 const DAILY_PRICING_KV_KEY =
   process.env.DAILY_PRICING_KV_KEY || "stone-river-mortgage:daily-pricing:v1";
-const DAILY_PRICING_ANALYTICS_KV_KEY =
-  process.env.DAILY_PRICING_ANALYTICS_KV_KEY ||
-  `${DAILY_PRICING_KV_KEY}:analytics`;
+const DAILY_PRICING_ANALYTICS_V2_KV_KEY =
+  process.env.DAILY_PRICING_ANALYTICS_V2_KV_KEY ||
+  `${DAILY_PRICING_KV_KEY}:analytics:v2`;
 type EnvMap = Record<string, string | undefined>;
 
 export function resolveDailyPricingDataDir(
@@ -44,6 +45,7 @@ export function resolveDailyPricingDataDir(
 
 const DATA_DIR = resolveDailyPricingDataDir();
 const STORE_PATH = path.join(DATA_DIR, "daily-pricing.json");
+const ANALYTICS_V2_PATH = path.join(DATA_DIR, "daily-pricing-analytics-v2.json");
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 12;
 
 const DEFAULT_SEEDED_EMAIL = "mikesikkink99@gmail.com";
@@ -119,13 +121,26 @@ export type PricingRateHistoryRecord = {
   changedBy: string | null;
 };
 
-export type DailyPricingAnalytics = {
+type LegacyDailyPricingAnalytics = {
   pdfGeneratedCount: number;
-  propertyTaxLookupCount: number;
-  propertyTaxLookupCountByCounty: Record<string, number>;
   propertyTaxLookupOutcomesByCounty: Record<string, PropertyTaxLookupOutcomeCounts>;
   propertyTaxLookupNonMetroCount: number;
   propertyTaxCurrentOrPreviousYearRecordFoundCount: number;
+};
+
+export type DailyPricingTrackedAddressRecord = {
+  address: string;
+  county: string;
+  isMetroCounty: boolean;
+  firstPdfGeneratedAt: string;
+  lastPdfGeneratedAt: string;
+  pdfGeneratedCount: number;
+  firstPdfPropertyTaxOutcome: PropertyTaxLookupOutcomeCategory;
+};
+
+export type DailyPricingAnalytics = {
+  pdfGeneratedCount: number;
+  addressesByKey: Record<string, DailyPricingTrackedAddressRecord>;
 };
 
 export type PropertyTaxLookupOutcomeCounts = {
@@ -136,11 +151,23 @@ export type PropertyTaxLookupOutcomeCounts = {
 };
 
 type PropertyTaxLookupRecordInput = {
-  county: string | null | undefined;
-  isMetroCounty: boolean;
   resultType: "county_retrieved" | "estimated" | "unresolved";
   actualTaxYearUsed: number | null | undefined;
   currentYear?: number;
+};
+
+type TransactionSummaryAnalyticsRecordInput = {
+  address: string;
+  county: string | null | undefined;
+  propertyTaxSource:
+    | "User Provided"
+    | "Estimated Using County Rate"
+    | "County Retrieved"
+    | null
+    | undefined;
+  propertyTaxActualYearUsed: number | null | undefined;
+  currentYear?: number;
+  generatedAt?: string;
 };
 
 export type PropertyTaxLookupOutcomeCategory =
@@ -154,11 +181,13 @@ type PricingStore = {
   sessions: SessionRecord[];
   pricing: PricingConfig;
   pricingRateHistory: PricingRateHistoryRecord[];
-  analytics: DailyPricingAnalytics;
+  analytics: LegacyDailyPricingAnalytics;
 };
 
 let inMemoryStoreFallback: PricingStore | null = null;
 let hasLoggedInMemoryStoreFallback = false;
+let inMemoryAnalyticsFallback: DailyPricingAnalytics | null = null;
+let hasLoggedInMemoryAnalyticsFallback = false;
 
 const DEFAULT_PRICING: EditablePricingConfig = {
   interestRate: 5.625,
@@ -278,7 +307,7 @@ function defaultStore(): PricingStore {
       lastUpdatedBy: null
     },
     pricingRateHistory: [],
-    analytics: createDefaultAnalytics()
+    analytics: createDefaultLegacyAnalytics()
   };
 }
 
@@ -292,14 +321,19 @@ function isServerlessRuntime(env: EnvMap = process.env): boolean {
   return Boolean(env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME);
 }
 
-function createDefaultAnalytics(): DailyPricingAnalytics {
+function createDefaultLegacyAnalytics(): LegacyDailyPricingAnalytics {
   return {
     pdfGeneratedCount: 0,
-    propertyTaxLookupCount: 0,
-    propertyTaxLookupCountByCounty: {},
     propertyTaxLookupOutcomesByCounty: {},
     propertyTaxLookupNonMetroCount: 0,
     propertyTaxCurrentOrPreviousYearRecordFoundCount: 0
+  };
+}
+
+function createDefaultAnalytics(): DailyPricingAnalytics {
+  return {
+    pdfGeneratedCount: 0,
+    addressesByKey: {}
   };
 }
 
@@ -345,7 +379,9 @@ function toStringWithFallback(value: unknown, fallback: string): string {
   return trimmed ? trimmed : fallback;
 }
 
-function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
+function normalizeStoredLegacyAnalytics(
+  input: unknown
+): LegacyDailyPricingAnalytics {
   const source = isObject(input) ? input : {};
   const byCountySource = isObject(source.propertyTaxLookupCountByCounty)
     ? source.propertyTaxLookupCountByCounty
@@ -436,14 +472,6 @@ function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
         min: 0
       })
     ),
-    propertyTaxLookupCount: Math.floor(
-      toNumberWithFallback({
-        value: source.propertyTaxLookupCount,
-        fallback: 0,
-        min: 0
-      })
-    ),
-    propertyTaxLookupCountByCounty: byCounty,
     propertyTaxLookupOutcomesByCounty: byCountyOutcomes,
     propertyTaxLookupNonMetroCount: Math.floor(
       toNumberWithFallback({
@@ -459,6 +487,86 @@ function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
         min: 0
       })
     )
+  };
+}
+
+function normalizeStoredTrackedAddressRecord(
+  input: unknown
+): DailyPricingTrackedAddressRecord | null {
+  if (!isObject(input)) {
+    return null;
+  }
+
+  const address = normalizeAnalyticsAddressDisplay(
+    typeof input.address === "string" ? input.address : ""
+  );
+  if (!address) {
+    return null;
+  }
+
+  const county = normalizeAnalyticsCounty(
+    typeof input.county === "string" ? input.county : null
+  );
+  const pdfGeneratedCount = Math.floor(
+    toNumberWithFallback({
+      value: input.pdfGeneratedCount,
+      fallback: 0,
+      min: 0
+    })
+  );
+  const firstPdfGeneratedAt =
+    typeof input.firstPdfGeneratedAt === "string" &&
+    input.firstPdfGeneratedAt.trim()
+      ? input.firstPdfGeneratedAt
+      : new Date(0).toISOString();
+  const lastPdfGeneratedAt =
+    typeof input.lastPdfGeneratedAt === "string" &&
+    input.lastPdfGeneratedAt.trim()
+      ? input.lastPdfGeneratedAt
+      : firstPdfGeneratedAt;
+  const outcome = classifyStoredPropertyTaxOutcome(input.firstPdfPropertyTaxOutcome);
+  const isMetroCounty =
+    typeof input.isMetroCounty === "boolean"
+      ? input.isMetroCounty
+      : isMetroPriorityCounty(county);
+
+  return {
+    address,
+    county,
+    isMetroCounty,
+    firstPdfGeneratedAt,
+    lastPdfGeneratedAt,
+    pdfGeneratedCount,
+    firstPdfPropertyTaxOutcome: outcome
+  };
+}
+
+function normalizeStoredAnalytics(input: unknown): DailyPricingAnalytics {
+  const source = isObject(input) ? input : {};
+  const addressesByKeySource = isObject(source.addressesByKey)
+    ? source.addressesByKey
+    : {};
+
+  const addressesByKey: Record<string, DailyPricingTrackedAddressRecord> = {};
+  for (const [rawKey, value] of Object.entries(addressesByKeySource)) {
+    const record = normalizeStoredTrackedAddressRecord(value);
+    if (!record) {
+      continue;
+    }
+
+    const normalizedKey = normalizeAnalyticsAddressKey(rawKey || record.address);
+    addressesByKey[normalizedKey] = record;
+  }
+
+  return {
+    pdfGeneratedCount: Math.floor(
+      toNumberWithFallback({
+        value: source.pdfGeneratedCount,
+        fallback: 0,
+        min: 0
+      })
+    ),
+    addressesByKey
   };
 }
 
@@ -779,17 +887,63 @@ async function writeStoreToKv(store: PricingStore): Promise<void> {
 async function writeAnalyticsToKv(
   analytics: DailyPricingAnalytics
 ): Promise<void> {
-  await kvSetValue(DAILY_PRICING_ANALYTICS_KV_KEY, JSON.stringify(analytics));
+  await kvSetValue(DAILY_PRICING_ANALYTICS_V2_KV_KEY, JSON.stringify(analytics));
 }
 
 async function readAnalyticsFromKv(): Promise<DailyPricingAnalytics | null> {
-  const raw = await kvGetValue(DAILY_PRICING_ANALYTICS_KV_KEY);
+  const raw = await kvGetValue(DAILY_PRICING_ANALYTICS_V2_KV_KEY);
   if (!raw) {
     return null;
   }
 
   const parsed: unknown = JSON.parse(raw);
   return normalizeStoredAnalytics(parsed);
+}
+
+async function readAnalyticsFromFile(): Promise<DailyPricingAnalytics | null> {
+  if (inMemoryAnalyticsFallback) {
+    return inMemoryAnalyticsFallback;
+  }
+
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    const raw = await fs.readFile(ANALYTICS_V2_PATH, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    return normalizeStoredAnalytics(parsed);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function writeAnalyticsToFile(
+  analytics: DailyPricingAnalytics
+): Promise<void> {
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(ANALYTICS_V2_PATH, JSON.stringify(analytics, null, 2), "utf8");
+    inMemoryAnalyticsFallback = null;
+  } catch (error) {
+    inMemoryAnalyticsFallback = analytics;
+    if (!hasLoggedInMemoryAnalyticsFallback) {
+      hasLoggedInMemoryAnalyticsFallback = true;
+      console.warn(
+        "Daily pricing analytics are using in-memory fallback because filesystem writes are unavailable.",
+        {
+          dataDir: DATA_DIR,
+          error: error instanceof Error ? error.message : "unknown"
+        }
+      );
+    }
+  }
 }
 
 async function readStoreFromKv(): Promise<PricingStore | null> {
@@ -810,7 +964,7 @@ async function readStoreFromKv(): Promise<PricingStore | null> {
     pricingRateHistory: normalizeStoredPricingRateHistory(
       (parsed as Record<string, unknown>).pricingRateHistory
     ),
-    analytics: normalizeStoredAnalytics(parsed.analytics)
+    analytics: normalizeStoredLegacyAnalytics(parsed.analytics)
   };
 
   const seededEmail = normalizeEmail(SEEDED_EMAIL);
@@ -868,7 +1022,7 @@ async function ensureStore(): Promise<PricingStore> {
       pricingRateHistory: normalizeStoredPricingRateHistory(
         (parsed as Record<string, unknown>).pricingRateHistory
       ),
-      analytics: normalizeStoredAnalytics(parsed.analytics)
+      analytics: normalizeStoredLegacyAnalytics(parsed.analytics)
     };
 
     const seededEmail = normalizeEmail(SEEDED_EMAIL);
@@ -1098,32 +1252,10 @@ export async function getPricingRateHistory(): Promise<PricingRateHistoryRecord[
 
 export async function getDailyPricingAnalytics(): Promise<DailyPricingAnalytics> {
   if (isDailyPricingKvConfigured()) {
-    try {
-      const kvAnalytics = await readAnalyticsFromKv();
-      if (kvAnalytics) {
-        return kvAnalytics;
-      }
-    } catch (error) {
-      console.warn("Daily pricing analytics read from KV REST failed.", {
-        error: error instanceof Error ? error.message : "unknown"
-      });
-    }
+    return (await readAnalyticsFromKv()) ?? createDefaultAnalytics();
   }
 
-  const store = await ensureStore();
-  const normalizedAnalytics = normalizeStoredAnalytics(store.analytics);
-
-  if (isDailyPricingKvConfigured()) {
-    try {
-      await writeAnalyticsToKv(normalizedAnalytics);
-    } catch (error) {
-      console.warn("Daily pricing analytics write to KV REST failed.", {
-        error: error instanceof Error ? error.message : "unknown"
-      });
-    }
-  }
-
-  return normalizedAnalytics;
+  return (await readAnalyticsFromFile()) ?? createDefaultAnalytics();
 }
 
 function normalizeAnalyticsCounty(county: string | null | undefined): string {
@@ -1138,6 +1270,35 @@ function normalizeAnalyticsCounty(county: string | null | undefined): string {
     .split(/\s+/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
+}
+
+function normalizeAnalyticsAddressDisplay(address: string): string {
+  return address
+    .replace(/,\s*USA\s*$/i, "")
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeAnalyticsAddressKey(address: string): string {
+  const normalizedDisplayAddress = normalizeAnalyticsAddressDisplay(address);
+  return normalizedDisplayAddress.toLowerCase();
+}
+
+function classifyStoredPropertyTaxOutcome(
+  value: unknown
+): PropertyTaxLookupOutcomeCategory {
+  if (
+    value === "current_year" ||
+    value === "previous_year" ||
+    value === "older_year" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+
+  return "failed";
 }
 
 export function wasCurrentOrPreviousYearRecordFound(
@@ -1157,6 +1318,17 @@ function createDefaultCountyOutcomeCounts(): PropertyTaxLookupOutcomeCounts {
     olderYear: 0,
     failed: 0
   };
+}
+
+function countPropertyTaxLookupOutcomeCounts(
+  outcomes: PropertyTaxLookupOutcomeCounts
+): number {
+  return (
+    outcomes.currentYear +
+    outcomes.previousYear +
+    outcomes.olderYear +
+    outcomes.failed
+  );
 }
 
 export function classifyPropertyTaxLookupOutcome(
@@ -1189,111 +1361,189 @@ export function classifyPropertyTaxLookupOutcome(
   return "older_year";
 }
 
-export async function recordTransactionSummaryGenerated(): Promise<void> {
-  if (isDailyPricingKvConfigured()) {
-    const analytics = await getDailyPricingAnalytics();
-    analytics.pdfGeneratedCount += 1;
-    await writeAnalyticsToKv(analytics);
-    return;
-  }
-
-  const store = await ensureStore();
-  store.analytics.pdfGeneratedCount += 1;
-  await writeStore(store);
-}
-
-export async function recordPropertyTaxLookup(
-  input: PropertyTaxLookupRecordInput
-): Promise<void> {
-  if (isDailyPricingKvConfigured()) {
-    const analytics = await getDailyPricingAnalytics();
-    analytics.propertyTaxLookupCount += 1;
-
-    const normalizedCounty = normalizeAnalyticsCounty(input.county);
-    analytics.propertyTaxLookupCountByCounty[normalizedCounty] =
-      (analytics.propertyTaxLookupCountByCounty[normalizedCounty] ?? 0) + 1;
-
-    const countyOutcomes =
-      analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] ??
-      createDefaultCountyOutcomeCounts();
-    const lookupOutcome = classifyPropertyTaxLookupOutcome({
-      resultType: input.resultType,
-      actualTaxYearUsed: input.actualTaxYearUsed,
-      currentYear: input.currentYear
-    });
-    if (lookupOutcome === "current_year") {
-      countyOutcomes.currentYear += 1;
-    } else if (lookupOutcome === "previous_year") {
-      countyOutcomes.previousYear += 1;
-    } else if (lookupOutcome === "older_year") {
-      countyOutcomes.olderYear += 1;
-    } else {
-      countyOutcomes.failed += 1;
-    }
-
-    analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] = countyOutcomes;
-
-    if (!input.isMetroCounty) {
-      analytics.propertyTaxLookupNonMetroCount += 1;
-    }
-
-    if (
-      wasCurrentOrPreviousYearRecordFound({
-        resultType: input.resultType,
-        actualTaxYearUsed: input.actualTaxYearUsed,
-        currentYear: input.currentYear
-      })
-    ) {
-      analytics.propertyTaxCurrentOrPreviousYearRecordFoundCount += 1;
-    }
-
-    await writeAnalyticsToKv(analytics);
-    return;
-  }
-
-  const store = await ensureStore();
-  store.analytics.propertyTaxLookupCount += 1;
-
-  const normalizedCounty = normalizeAnalyticsCounty(input.county);
-  store.analytics.propertyTaxLookupCountByCounty[normalizedCounty] =
-    (store.analytics.propertyTaxLookupCountByCounty[normalizedCounty] ?? 0) + 1;
-
-  const countyOutcomes =
-    store.analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] ??
-    createDefaultCountyOutcomeCounts();
-  const lookupOutcome = classifyPropertyTaxLookupOutcome({
-    resultType: input.resultType,
-    actualTaxYearUsed: input.actualTaxYearUsed,
+function classifyTransactionSummaryPropertyTaxOutcome(
+  input: Pick<
+    TransactionSummaryAnalyticsRecordInput,
+    "propertyTaxSource" | "propertyTaxActualYearUsed" | "currentYear"
+  >
+): PropertyTaxLookupOutcomeCategory {
+  return classifyPropertyTaxLookupOutcome({
+    resultType:
+      input.propertyTaxSource === "County Retrieved"
+        ? "county_retrieved"
+        : "unresolved",
+    actualTaxYearUsed: input.propertyTaxActualYearUsed,
     currentYear: input.currentYear
   });
-  if (lookupOutcome === "current_year") {
-    countyOutcomes.currentYear += 1;
-  } else if (lookupOutcome === "previous_year") {
-    countyOutcomes.previousYear += 1;
-  } else if (lookupOutcome === "older_year") {
-    countyOutcomes.olderYear += 1;
-  } else {
-    countyOutcomes.failed += 1;
+}
+
+export function recordTransactionSummaryGeneratedForAnalytics(
+  analytics: DailyPricingAnalytics,
+  input: TransactionSummaryAnalyticsRecordInput
+): DailyPricingAnalytics {
+  const normalizedAddress = normalizeAnalyticsAddressDisplay(input.address);
+  if (!normalizedAddress) {
+    return analytics;
   }
 
-  store.analytics.propertyTaxLookupOutcomesByCounty[normalizedCounty] =
-    countyOutcomes;
+  const generatedAt = input.generatedAt ?? new Date().toISOString();
+  const addressKey = normalizeAnalyticsAddressKey(normalizedAddress);
+  analytics.pdfGeneratedCount += 1;
 
-  if (!input.isMetroCounty) {
-    store.analytics.propertyTaxLookupNonMetroCount += 1;
+  const existingRecord = analytics.addressesByKey[addressKey];
+  if (existingRecord) {
+    existingRecord.pdfGeneratedCount += 1;
+    existingRecord.lastPdfGeneratedAt = generatedAt;
+    return analytics;
   }
 
-  if (
-    wasCurrentOrPreviousYearRecordFound({
-      resultType: input.resultType,
-      actualTaxYearUsed: input.actualTaxYearUsed,
-      currentYear: input.currentYear
+  const county = normalizeAnalyticsCounty(input.county);
+  analytics.addressesByKey[addressKey] = {
+    address: normalizedAddress,
+    county,
+    isMetroCounty: isMetroPriorityCounty(county),
+    firstPdfGeneratedAt: generatedAt,
+    lastPdfGeneratedAt: generatedAt,
+    pdfGeneratedCount: 1,
+    firstPdfPropertyTaxOutcome: classifyTransactionSummaryPropertyTaxOutcome(input)
+  };
+
+  return analytics;
+}
+
+export type DailyPricingTrackedAddress = {
+  address: string;
+  county: string;
+  firstPdfGeneratedAt: string;
+  lastPdfGeneratedAt: string;
+  pdfGeneratedCount: number;
+};
+
+export type DailyPricingCountyPerformance = {
+  totalUniqueAddresses: number;
+  currentYearCount: number;
+  previousYearCount: number;
+  olderYearCount: number;
+  failedCount: number;
+  currentYearRate: number;
+  previousYearRate: number;
+  olderYearRate: number;
+  failedRate: number;
+};
+
+export function summarizeDailyPricingAnalytics(params: {
+  analytics: DailyPricingAnalytics;
+  currentYear?: number;
+}): {
+  trackedAddresses: DailyPricingTrackedAddress[];
+  uniqueAddressCount: number;
+  nonMetroUniqueAddressCount: number;
+  currentYear: number;
+  previousYear: number;
+  currentOrPreviousYearSuccessfulAddressCount: number;
+  currentOrPreviousYearSuccessRate: number | null;
+  countyPerformanceByUniqueAddress: Record<string, DailyPricingCountyPerformance>;
+} {
+  const currentYear = params.currentYear ?? new Date().getFullYear();
+  const previousYear = currentYear - 1;
+  const trackedAddressRecords = Object.values(params.analytics.addressesByKey).sort(
+    (left, right) => {
+      if (left.firstPdfGeneratedAt === right.firstPdfGeneratedAt) {
+        return left.address.localeCompare(right.address);
+      }
+
+      return left.firstPdfGeneratedAt < right.firstPdfGeneratedAt ? 1 : -1;
+    }
+  );
+  const uniqueAddressCount = trackedAddressRecords.length;
+  const nonMetroUniqueAddressCount = trackedAddressRecords.reduce(
+    (count, record) => count + (record.isMetroCounty ? 0 : 1),
+    0
+  );
+  const currentOrPreviousYearSuccessfulAddressCount = trackedAddressRecords.reduce(
+    (count, record) =>
+      count +
+      (record.firstPdfPropertyTaxOutcome === "current_year" ||
+      record.firstPdfPropertyTaxOutcome === "previous_year"
+        ? 1
+        : 0),
+    0
+  );
+  const countyCounts = trackedAddressRecords.reduce<
+    Record<string, PropertyTaxLookupOutcomeCounts>
+  >((result, record) => {
+    const county = record.county;
+    const existing = result[county] ?? createDefaultCountyOutcomeCounts();
+    if (record.firstPdfPropertyTaxOutcome === "current_year") {
+      existing.currentYear += 1;
+    } else if (record.firstPdfPropertyTaxOutcome === "previous_year") {
+      existing.previousYear += 1;
+    } else if (record.firstPdfPropertyTaxOutcome === "older_year") {
+      existing.olderYear += 1;
+    } else {
+      existing.failed += 1;
+    }
+    result[county] = existing;
+    return result;
+  }, {});
+
+  const countyPerformanceByUniqueAddress = Object.fromEntries(
+    Object.entries(countyCounts).map(([county, outcomes]) => {
+      const totalUniqueAddresses = countPropertyTaxLookupOutcomeCounts(outcomes);
+      const toRate = (value: number): number =>
+        totalUniqueAddresses > 0 ? value / totalUniqueAddresses : 0;
+
+      return [
+        county,
+        {
+          totalUniqueAddresses,
+          currentYearCount: outcomes.currentYear,
+          previousYearCount: outcomes.previousYear,
+          olderYearCount: outcomes.olderYear,
+          failedCount: outcomes.failed,
+          currentYearRate: toRate(outcomes.currentYear),
+          previousYearRate: toRate(outcomes.previousYear),
+          olderYearRate: toRate(outcomes.olderYear),
+          failedRate: toRate(outcomes.failed)
+        }
+      ];
     })
-  ) {
-    store.analytics.propertyTaxCurrentOrPreviousYearRecordFoundCount += 1;
+  );
+
+  return {
+    trackedAddresses: trackedAddressRecords.map((record) => ({
+      address: record.address,
+      county: record.county,
+      firstPdfGeneratedAt: record.firstPdfGeneratedAt,
+      lastPdfGeneratedAt: record.lastPdfGeneratedAt,
+      pdfGeneratedCount: record.pdfGeneratedCount
+    })),
+    uniqueAddressCount,
+    nonMetroUniqueAddressCount,
+    currentYear,
+    previousYear,
+    currentOrPreviousYearSuccessfulAddressCount,
+    currentOrPreviousYearSuccessRate:
+      uniqueAddressCount > 0
+        ? currentOrPreviousYearSuccessfulAddressCount / uniqueAddressCount
+        : null,
+    countyPerformanceByUniqueAddress
+  };
+}
+
+export async function recordTransactionSummaryGenerated(
+  input: TransactionSummaryAnalyticsRecordInput
+): Promise<void> {
+  if (isDailyPricingKvConfigured()) {
+    const analytics = (await readAnalyticsFromKv()) ?? createDefaultAnalytics();
+    recordTransactionSummaryGeneratedForAnalytics(analytics, input);
+    await writeAnalyticsToKv(analytics);
+    return;
   }
 
-  await writeStore(store);
+  const analytics = (await readAnalyticsFromFile()) ?? createDefaultAnalytics();
+  recordTransactionSummaryGeneratedForAnalytics(analytics, input);
+  await writeAnalyticsToFile(analytics);
 }
 
 export async function loginWithCredentials(

@@ -840,6 +840,7 @@ export function MarketingPage() {
         },
         body: JSON.stringify({
           address: effectiveVerifiedAddress.formattedAddress,
+          county: effectiveVerifiedAddress.county,
           state: effectiveVerifiedAddress.state,
           purchasePrice: parsedPurchasePrice,
           downPaymentPercent: parsedDownPaymentPercent,

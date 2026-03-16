@@ -59,10 +59,14 @@ Persistence modes (automatic selection):
 
 The store also records:
 
-- PDF generation counts
-- property tax lookup counts by county
-- county outcome distribution (`current_year`, `previous_year`, `older_year`, `failed`)
+- cumulative successful PDF generation count
+- successful PDF addresses with first/last PDF timestamps and per-address PDF totals
+- derived county performance from each address's first successful PDF tax outcome (`current_year`, `previous_year`, `older_year`, `failed`)
 - interest/discount-point change history
+
+Current Daily Pricing analytics are intentionally stored in a separate v2 namespace/key
+from the main Daily Pricing store so a new analytics series can start from zero without
+overwriting prior production analytics blobs.
 
 ## Layering and Boundaries
 

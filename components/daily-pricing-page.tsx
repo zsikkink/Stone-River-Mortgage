@@ -58,12 +58,18 @@ type PricingRateHistoryRecord = {
 
 type PricingAnalytics = {
   pdfGeneratedCount: number;
-  propertyTaxLookupCount: number;
-  propertyTaxLookupCountByCounty: Record<string, number>;
-  propertyTaxLookupRatesByCounty: Record<
+  trackedAddresses: Array<{
+    address: string;
+    county: string;
+    firstPdfGeneratedAt: string;
+    lastPdfGeneratedAt: string;
+    pdfGeneratedCount: number;
+  }>;
+  uniqueAddressCount: number;
+  countyPerformanceByUniqueAddress: Record<
     string,
     {
-      total: number;
+      totalUniqueAddresses: number;
       currentYearCount: number;
       previousYearCount: number;
       olderYearCount: number;
@@ -74,8 +80,8 @@ type PricingAnalytics = {
       failedRate: number;
     }
   >;
-  propertyTaxLookupNonMetroCount: number;
-  propertyTaxCurrentOrPreviousYearRecordFoundCount: number;
+  nonMetroUniqueAddressCount: number;
+  currentOrPreviousYearSuccessfulAddressCount: number;
   currentYear: number;
   previousYear: number;
   currentOrPreviousYearSuccessRate: number | null;
@@ -642,36 +648,62 @@ export function DailyPricingPage() {
                   Activity
                 </h2>
                 <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                  <p>PDFs generated: {analytics.pdfGeneratedCount}</p>
+                  <p>PDFs created: {analytics.pdfGeneratedCount}</p>
+                  <p>Unique PDF addresses: {analytics.uniqueAddressCount}</p>
                   <p>
-                    Property tax lookups: {analytics.propertyTaxLookupCount}
-                  </p>
-                  <p>
-                    Record success ({analytics.currentYear}/{analytics.previousYear}):{" "}
-                    {analytics.propertyTaxCurrentOrPreviousYearRecordFoundCount} /{" "}
-                    {analytics.propertyTaxLookupCount}{" "}
+                    Current/previous-year unique-address success ({analytics.currentYear}/
+                    {analytics.previousYear}):{" "}
+                    {analytics.currentOrPreviousYearSuccessfulAddressCount} /{" "}
+                    {analytics.uniqueAddressCount}{" "}
                     {typeof analytics.currentOrPreviousYearSuccessRate === "number"
-                      ? `(${(analytics.currentOrPreviousYearSuccessRate * 100).toFixed(1)}%)`
+                      ? `(${(analytics.currentOrPreviousYearSuccessRate * 100).toFixed(1)}% success)`
                       : "(n/a)"}
                   </p>
                   <p>
-                    Non-metro county lookups:{" "}
-                    {analytics.propertyTaxLookupNonMetroCount}
+                    Unique non-metro addresses: {analytics.nonMetroUniqueAddressCount}
                   </p>
                 </div>
 
                 <div className="mt-3">
                   <h3 className="text-sm font-semibold text-slate-800">
-                    Property Tax Lookups by County
+                    Successful PDF Addresses
                   </h3>
-                  {Object.keys(analytics.propertyTaxLookupRatesByCounty).length ===
+                  {analytics.trackedAddresses.length === 0 ? (
+                    <p className="mt-1 text-sm text-slate-600">
+                      No successful PDF activity yet.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                      {analytics.trackedAddresses.map((record) => (
+                        <li
+                          key={`${record.address}-${record.firstPdfGeneratedAt}`}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <p className="font-medium text-slate-900">{record.address}</p>
+                          <p className="text-xs text-slate-700">
+                            First PDF: {formatHistoryTimestamp(record.firstPdfGeneratedAt)}
+                          </p>
+                          <p className="text-xs text-slate-700">
+                            PDFs created: {record.pdfGeneratedCount}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="mt-3">
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    County Performance by Unique PDF Address
+                  </h3>
+                  {Object.keys(analytics.countyPerformanceByUniqueAddress).length ===
                   0 ? (
                     <p className="mt-1 text-sm text-slate-600">
-                      No lookup activity yet.
+                      No successful PDF activity yet.
                     </p>
                   ) : (
                     <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                      {Object.entries(analytics.propertyTaxLookupRatesByCounty)
+                      {Object.entries(analytics.countyPerformanceByUniqueAddress)
                         .sort(([leftCounty], [rightCounty]) =>
                           leftCounty.localeCompare(rightCounty)
                         )
@@ -681,7 +713,7 @@ export function DailyPricingPage() {
                             className="rounded-lg border border-slate-200 bg-white px-3 py-2"
                           >
                             <p className="font-medium text-slate-900">
-                              {county} ({rates.total})
+                              {county} ({rates.totalUniqueAddresses} unique)
                             </p>
                             <p className="text-xs text-slate-700">
                               {analytics.currentYear}:{" "}
