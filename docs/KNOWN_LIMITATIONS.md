@@ -1,5 +1,10 @@
 # Known Limitations
 
+Related docs:
+
+- [docs/PROJECT_STATE.md](PROJECT_STATE.md)
+- [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+
 ## External County Source Volatility
 
 County provider reliability depends on external systems that can change behavior, block automated requests, or return inconsistent schemas.
@@ -22,6 +27,12 @@ Carver requests may require additional CA chain trust setup. Preferred productio
 ## Serverless Persistence Without KV
 
 If KV REST variables are not configured in serverless environments, fallback filesystem persistence can be ephemeral and not shared across function instances.
+
+## Persistence Uses Whole-Object Rewrites
+
+Daily Pricing store updates and Daily Pricing analytics updates rewrite whole JSON blobs.
+There are no atomic counter primitives or append-only analytics events in the current
+implementation.
 
 ## Scope Boundaries
 

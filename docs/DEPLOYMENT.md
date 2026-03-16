@@ -1,5 +1,10 @@
 # Deployment
 
+Related docs:
+
+- [docs/ENVIRONMENT.md](ENVIRONMENT.md)
+- [docs/PROJECT_STATE.md](PROJECT_STATE.md)
+
 ## Target Platform
 
 Primary deployment target is **Vercel**.
@@ -46,6 +51,8 @@ npm run verify
    - transaction summary generates successfully
    - `/dailypricing` sign-in works
    - property tax API returns county/year metadata
+
+There are no database migrations or worker rollout steps in the current architecture.
 
 ## Carver TLS in Production
 

@@ -1,5 +1,11 @@
 # Setup
 
+Related docs:
+
+- [docs/ONBOARDING.md](ONBOARDING.md)
+- [docs/ENVIRONMENT.md](ENVIRONMENT.md)
+- [docs/DEPLOYMENT.md](DEPLOYMENT.md)
+
 ## Prerequisites
 
 - Node.js 20+
@@ -13,19 +19,19 @@
 npm install
 ```
 
-2. Create local env file:
+2. Copy the env template:
 
 ```bash
 cp .env.example .env.local
 ```
 
-3. Set at minimum:
+3. Populate at minimum:
 
 - `GOOGLE_MAPS_API_KEY`
 - `DAILY_PRICING_SEEDED_EMAIL`
 - `DAILY_PRICING_SEEDED_PASSWORD`
 
-4. Start dev server:
+4. Start the dev server:
 
 ```bash
 npm run dev
@@ -33,15 +39,16 @@ npm run dev
 
 5. Open:
 
-- `http://localhost:3000` (marketing page)
-- `http://localhost:3000/dailypricing` (pricing admin)
+- `http://localhost:3000`
+- `http://localhost:3000/dailypricing`
 
 ## Optional: Carver TLS Local Workflow
 
-If Carver county requests fail due certificate-chain validation:
+If Carver county requests fail due to certificate-chain validation:
 
-- Preferred: set `CARVER_CA_PEM` in your shell before startup.
-- Alternative: run `npm run dev:carver` with `CARVER_EXTRA_CA_BUNDLE` or `NODE_EXTRA_CA_CERTS` set.
+- preferred: set `CARVER_CA_PEM` before startup
+- local helper: run `npm run dev:carver` with `CARVER_EXTRA_CA_BUNDLE` or
+  `NODE_EXTRA_CA_CERTS` set
 
 To verify connectivity:
 
@@ -51,9 +58,23 @@ npm run check:carver-tls
 
 ## Validation Commands
 
+Recommended validation order:
+
 ```bash
-npm run typecheck
 npm test
 npm run build
+npm run typecheck
+```
+
+Or:
+
+```bash
 npm run verify
 ```
+
+Important repo caveats:
+
+- `npm run typecheck` relies on generated `.next/types`, so it is most reliable after
+  `npm run build`.
+- `npm run lint` is currently not a stable validation command because ESLint is not fully
+  configured and Next.js will prompt interactively.

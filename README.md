@@ -1,64 +1,27 @@
 # Stone River Mortgage
 
-Production-grade Next.js platform for **Stone River Mortgage** that combines a polished public marketing experience with a real operational pricing engine. It delivers county-aware Minnesota property-tax retrieval, configurable lending assumptions, and fast server-generated transaction summary PDFs from a single, maintainable TypeScript codebase.
+Stone River Mortgage is a Next.js 15 App Router application that combines:
 
-Primary domain: `https://stonerivermortgage.com`
+- a public marketing page at `/`
+- a server-generated Minnesota transaction summary PDF flow
+- an internal Daily Pricing admin at `/dailypricing`
 
-## Overview
+This repository is a single-app codebase. There is no separate backend service, no ORM,
+no SQL schema, no migration system, and no worker/queue layer. Operational state lives in
+the Daily Pricing store, which persists to KV REST when configured and falls back to the
+filesystem or in-memory storage.
 
-This repository powers three core workflows:
+## What The App Does
 
-1. Public one-page marketing site with lead CTAs and transaction-summary modal.
-2. Internal `/dailypricing` admin for rate/fee configuration and activity analytics.
-3. Server-generated transaction summary PDFs with Minnesota-specific tax/title logic.
+Primary workflows:
 
-## Key Features
+1. Address autocomplete and verification through Google Places server APIs.
+2. Minnesota property-tax retrieval with county-provider strategies and estimate fallback.
+3. Server-side transaction summary PDF generation with pricing, tax, title, and APR logic.
+4. Daily Pricing auth, pricing configuration, rate history, and successful-PDF activity
+   analytics.
 
-- **Marketing page** with logo, mobile-first layout, application CTA, and in-page PDF preview.
-- **Transaction summary builder** with:
-  - Google Places address autocomplete + server verification
-  - Minnesota-only address enforcement
-  - purchase/down payment inputs (including custom percent or custom dollar amount)
-  - PDF preview, download, and share actions
-- **PDF generation API** (`/api/transaction-summary`) using `pdf-lib`, including:
-  - dynamic loan/payment values
-  - county tax year/source labels
-  - title premium + APR calculations
-  - Daily Pricing-controlled rates/fees/footer text
-- **Minnesota property tax subsystem** with:
-  - metro-county provider strategies
-  - county retrieval + estimate fallback
-  - explicit requested vs actual tax-year metadata
-- **Daily Pricing admin** with credential-based sign-in, editable pricing configuration, rate-change history, and lookup/PDF activity analytics.
-
-## Tech Stack
-
-- **Framework:** Next.js 15 (App Router)
-- **Language:** TypeScript (strict mode)
-- **Styling:** Tailwind CSS
-- **Validation:** Zod
-- **PDF engine:** pdf-lib
-- **Tests:** Vitest
-
-## Architecture At A Glance
-
-- `app/` contains routes and API endpoints.
-- `components/` contains UI for the marketing page, daily pricing dashboard, and address autocomplete.
-- `lib/` contains business logic:
-  - `daily-pricing-store.ts` for auth/config persistence/analytics
-  - `propertyTax/` for county strategy/provider orchestration
-  - `titlePremium/` and `apr/` for financial calculations
-
-Detailed architecture docs are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-## Local Development
-
-### Prerequisites
-
-- Node.js 20+
-- npm 10+
-
-### Setup
+## Quick Start
 
 ```bash
 npm install
@@ -66,80 +29,92 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open:
 
-For full setup details, see [`docs/SETUP.md`](docs/SETUP.md).
+- `http://localhost:3000/`
+- `http://localhost:3000/dailypricing`
 
-## Environment Variables
-
-This project uses server-side environment variables for APIs, admin auth, and persistence.
-
-Minimum required:
+Required local env vars:
 
 - `GOOGLE_MAPS_API_KEY`
 - `DAILY_PRICING_SEEDED_EMAIL`
 - `DAILY_PRICING_SEEDED_PASSWORD`
 
-Recommended in production:
+Full setup details: [docs/SETUP.md](docs/SETUP.md)
 
-- `DAILY_PRICING_KV_REST_URL`
-- `DAILY_PRICING_KV_REST_TOKEN`
-- `CARVER_CA_PEM`
-
-Complete variable reference: [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md).
-
-## Scripts
+## Validation Commands
 
 ```bash
-npm run dev            # local development
-npm run dev:carver     # local dev helper for Carver CA workflows
-npm run build          # production build
-npm run start          # run production build locally
-npm run test           # run Vitest
-npm run typecheck      # TypeScript checks
-npm run verify         # typecheck + tests + build
-npm run check:carver-tls
+npm test
+npm run build
+npm run typecheck
 ```
 
-## Deployment (Vercel)
+Use `npm run verify` for the same sequence.
 
-- Framework preset: **Next.js**
-- Build command: `npm run build`
-- Install command: `npm install`
-- Output directory: leave default (`.next`)
-- Runtime: Node.js (API routes are explicitly configured for Node runtime)
+Important repo caveat:
 
-Deployment guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+- `tsconfig.json` includes `.next/types/**/*.ts`, so `npm run typecheck` is most reliable
+  after `npm run build` has generated fresh Next.js types.
+- `npm run lint` is present in `package.json`, but ESLint is not fully configured in the
+  current repo state. Running it will trigger Next.js setup prompts instead of acting as a
+  stable validation step.
 
-## Repository Structure
+## Where To Start Reading
 
-High-level structure and file responsibilities are documented in [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md).
+If you are new to the repo, use this order:
 
-## Documentation
+1. [docs/ONBOARDING.md](docs/ONBOARDING.md)
+2. [docs/REPO_MAP.md](docs/REPO_MAP.md)
+3. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+4. [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md)
+5. [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
 
-- Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- Setup: [`docs/SETUP.md`](docs/SETUP.md)
-- Environment: [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)
-- Deployment: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
-- Limitations: [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)
-- Contributing: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
-- Reviewer orientation: [`docs/REPOSITORY_REVIEW_GUIDE.md`](docs/REPOSITORY_REVIEW_GUIDE.md)
+## Important Entry Points
 
-## Reviewer Guide
+- Public page: [app/page.tsx](app/page.tsx)
+- Daily Pricing page: [app/dailypricing/page.tsx](app/dailypricing/page.tsx)
+- Public UI: [components/marketing-page.tsx](components/marketing-page.tsx)
+- Daily Pricing UI: [components/daily-pricing-page.tsx](components/daily-pricing-page.tsx)
+- PDF route: [app/api/transaction-summary/route.ts](app/api/transaction-summary/route.ts)
+- Property-tax route: [app/api/property-tax/route.ts](app/api/property-tax/route.ts)
+- Daily Pricing store: [lib/daily-pricing-store.ts](lib/daily-pricing-store.ts)
 
-If you are reviewing this repository for architecture/code quality, start with:
+## Project Structure
 
-1. [`docs/REPOSITORY_REVIEW_GUIDE.md`](docs/REPOSITORY_REVIEW_GUIDE.md)
-2. [`app/api/transaction-summary/route.ts`](app/api/transaction-summary/route.ts)
-3. [`lib/propertyTax/calc.ts`](lib/propertyTax/calc.ts)
-4. [`lib/daily-pricing-store.ts`](lib/daily-pricing-store.ts)
+High-signal directories:
 
-## Known Limitations
+- `app/`: route entry points and API handlers
+- `components/`: client-side UI for marketing, Daily Pricing, and utilities
+- `lib/`: business logic, calculations, persistence, and property-tax providers
+- `docs/`: trusted documentation for onboarding, architecture, and operations
+- `scripts/`: local operational helpers and Carver TLS diagnostics
+- `public/`: brand assets and PDF preview font assets
 
-Current external dependency and county-source limitations are tracked in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+Detailed map: [docs/REPO_MAP.md](docs/REPO_MAP.md)
 
-## License / Ownership
+## Architecture And Operations
+
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Environment variables: [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
+- Deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Current status / fragility / likely next work: [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md)
+- Known operational limitations: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
+- Contributing constraints: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+
+## Key Technical Realities
+
+- The app is Minnesota-specific for transaction summary workflows.
+- Property-tax retrieval depends on external county systems and can fall back to estimates.
+- Daily Pricing analytics now track successful PDF addresses only, using a separate v2
+  analytics namespace.
+- Daily Pricing persistence uses whole-object rewrites, not atomic field updates.
+- Production deployment target is Vercel.
+
+## Ownership
 
 Copyright (c) Zack Sikkink.
 
-This repository is proprietary and not licensed for public use, copying, modification, distribution, sublicensing, or sale without prior written permission. See [`LICENSE`](LICENSE).
+This repository is proprietary and not licensed for public use, copying, modification,
+distribution, sublicensing, or sale without prior written permission. See
+[LICENSE](LICENSE).
