@@ -23,6 +23,7 @@ const WRIGHT_DISCLAIMER_PATH =
 const WRIGHT_PARCEL_ARCGIS_QUERY_URL =
   "https://web.co.wright.mn.us/arcgisserver/rest/services/Wright_County_Parcels/MapServer/1/query";
 const WRIGHT_ARCGIS_SEARCH_RADII_METERS = [30, 80, 150];
+const WRIGHT_SEARCH_PAGE_SIZE = "50";
 
 const STREET_SUFFIXES = new Set([
   "ALY",
@@ -72,6 +73,10 @@ type WrightSearchResultRow = {
   dataletUrl: string | null;
   taxYear: number | null;
   rowText: string;
+};
+
+type WrightAddressSearchStrategy = {
+  fields: Record<string, string>;
 };
 
 type WrightTaxDataletParseResult = {
@@ -399,10 +404,51 @@ function buildWrightParcelMatches(rows: WrightSearchResultRow[]): ParcelMatch[] 
     });
 }
 
+function buildWrightDirectDataletMatch(args: {
+  html: string;
+  finalUrl: string;
+  fallbackSitusAddress: string | null | undefined;
+}): ParcelMatch | null {
+  const hiddenFields = extractHiddenInputs(args.html);
+  const parcelId = hiddenFields.hdPin || hiddenFields.hdXPin || null;
+  const looksLikeDatalet =
+    /datalet\.aspx/i.test(args.finalUrl) ||
+    Boolean(hiddenFields.hdMode) ||
+    Boolean(hiddenFields["DTLNavigator$hdRecCount"]);
+
+  if (!parcelId || !looksLikeDatalet) {
+    return null;
+  }
+
+  const taxYearValue = hiddenFields.hdTaxYear || hiddenFields.hdXTaxYr || null;
+  const parsedTaxYear = taxYearValue ? Number.parseInt(taxYearValue, 10) : null;
+  const taxYear =
+    typeof parsedTaxYear === "number" && Number.isFinite(parsedTaxYear) && parsedTaxYear > 0
+      ? parsedTaxYear
+      : null;
+
+  return {
+    parcelId,
+    objectId: 1,
+    situsAddress: args.fallbackSitusAddress?.trim() || null,
+    annualPropertyTax: null,
+    taxYear,
+    distanceMeters: null,
+    sourceUrl: args.finalUrl,
+    raw: {
+      attributes: {
+        COUNTY_PIN: parcelId,
+        JURISDICTION: hiddenFields.hdJur || hiddenFields.hdXJur || null
+      },
+      datalet_url: args.finalUrl,
+      discovery_source: "wright_direct_datalet_redirect"
+    }
+  };
+}
+
 function scoreWrightAddressMatch(parcel: ParcelMatch, request: CountyTaxProviderRequest): number {
   const requestAddress = parseWrightAddressParts(request.formattedAddress);
-  const parcelAddressLine = parcel.situsAddress?.split(",")[0] ?? null;
-  const parcelAddress = parseWrightAddressParts(parcelAddressLine);
+  const parcelAddress = parseWrightAddressParts(parcel.situsAddress);
   if (!requestAddress || !parcelAddress) {
     return 0;
   }
@@ -438,6 +484,128 @@ function scoreWrightAddressMatch(parcel: ParcelMatch, request: CountyTaxProvider
   }
 
   return score;
+}
+
+function buildWrightAddressSearchStrategies(
+  addressParts: WrightAddressParts
+): WrightAddressSearchStrategy[] {
+  const rawStrategies: Array<Record<string, string | null>> = [
+    {
+      inpNumber: addressParts.streetNumber,
+      inpStreet: addressParts.streetName,
+      inpSuffix: addressParts.suffix,
+      inpDirection: addressParts.direction,
+      inpZip: addressParts.zip
+    },
+    {
+      inpNumber: addressParts.streetNumber
+    },
+    {
+      inpStreet: addressParts.streetName,
+      inpSuffix: addressParts.suffix,
+      inpDirection: addressParts.direction,
+      inpZip: addressParts.zip
+    },
+    {
+      inpStreet: addressParts.streetName,
+      inpZip: addressParts.zip
+    }
+  ];
+
+  const strategies: WrightAddressSearchStrategy[] = [];
+  const seen = new Set<string>();
+
+  for (const rawStrategy of rawStrategies) {
+    const fields = Object.fromEntries(
+      Object.entries(rawStrategy).filter((entry): entry is [string, string] => {
+        const value = entry[1];
+        return typeof value === "string" && value.trim().length > 0;
+      })
+    );
+    const key = JSON.stringify(fields);
+    if (!key || seen.has(key) || Object.keys(fields).length === 0) {
+      continue;
+    }
+
+    seen.add(key);
+    strategies.push({ fields });
+  }
+
+  return strategies;
+}
+
+async function executeWrightAddressSearch(args: {
+  jar: ReturnType<typeof createCookieJar>;
+  formFields: Record<string, string>;
+  searchFields: Record<string, string>;
+  fallbackSitusAddress: string | null | undefined;
+}): Promise<{ matches: ParcelMatch[]; nextFormFields: Record<string, string> }> {
+  const body = new URLSearchParams(args.formFields);
+
+  body.set("mode", "COMBINED");
+  body.set("hdAction", "Search");
+  body.set("btSearch", "Search");
+  body.set("selSortBy", "FULLADD");
+  body.set("SortBy", "FULLADD");
+  body.set("selSortDir", " asc");
+  body.set("SortDir", " asc");
+  body.set("selPageSize", WRIGHT_SEARCH_PAGE_SIZE);
+  body.set("PageSize", WRIGHT_SEARCH_PAGE_SIZE);
+
+  body.set("inpParid", "");
+  body.set("inpNumber", "");
+  body.set("inpStreet", "");
+  body.set("inpSuffix", "");
+  body.set("inpDirection", "");
+  body.set("inpZip", "");
+
+  for (const [key, value] of Object.entries(args.searchFields)) {
+    body.set(key, value);
+  }
+
+  const searchUrl = new URL(WRIGHT_SEARCH_PATH, WRIGHT_BASE_URL).toString();
+  const responseResult = await fetchWithCookies(
+    searchUrl,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: body.toString()
+    },
+    args.jar
+  );
+  const response = responseResult.response;
+
+  if (!response.ok) {
+    throw new MetroProviderError({
+      kind: "response_error",
+      code: String(response.status),
+      message: `Wright County search responded with HTTP ${response.status}`
+    });
+  }
+
+  const resultsHtml = await response.text();
+  const directDataletMatch = buildWrightDirectDataletMatch({
+    html: resultsHtml,
+    finalUrl: responseResult.finalUrl,
+    fallbackSitusAddress: args.fallbackSitusAddress
+  });
+  if (directDataletMatch) {
+    return {
+      matches: [directDataletMatch],
+      nextFormFields: args.formFields
+    };
+  }
+
+  const rows = parseWrightSearchResultRows(resultsHtml);
+  const nextFormFields = extractHiddenInputs(resultsHtml);
+
+  return {
+    matches: buildWrightParcelMatches(rows),
+    nextFormFields:
+      Object.keys(nextFormFields).length > 0 ? nextFormFields : args.formFields
+  };
 }
 
 function extractWrightParcelQuery(parcel: ParcelMatch): string | null {
@@ -549,43 +717,43 @@ async function searchWrightByAddress(
 
   const jar = createCookieJar();
   const searchPageHtml = await loadWrightSearchPage(jar);
-  const fields = extractHiddenInputs(searchPageHtml);
-  const body = new URLSearchParams(fields);
+  let formFields = extractHiddenInputs(searchPageHtml);
+  const strategies = buildWrightAddressSearchStrategies(addressParts);
 
-  body.set("mode", "COMBINED");
-  body.set("hdAction", "Search");
-  body.set("inpNumber", addressParts.streetNumber);
-  body.set("inpStreet", addressParts.streetName);
-  body.set("inpSuffix", addressParts.suffix ?? "");
-  body.set("inpDirection", addressParts.direction ?? "");
-  body.set("inpZip", addressParts.zip ?? "");
-  body.set("btSearch", "Search");
-
-  const searchUrl = new URL(WRIGHT_SEARCH_PATH, WRIGHT_BASE_URL).toString();
-  const responseResult = await fetchWithCookies(
-    searchUrl,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: body.toString()
-    },
-    jar
-  );
-  const response = responseResult.response;
-
-  if (!response.ok) {
-    throw new MetroProviderError({
-      kind: "response_error",
-      code: String(response.status),
-      message: `Wright County search responded with HTTP ${response.status}`
+  const exactStrategy = strategies[0];
+  if (exactStrategy) {
+    const exactSearch = await executeWrightAddressSearch({
+      jar,
+      formFields,
+      searchFields: exactStrategy.fields,
+      fallbackSitusAddress: request.formattedAddress
     });
+    if (exactSearch.matches.length > 0) {
+      return exactSearch.matches;
+    }
+    formFields = exactSearch.nextFormFields;
   }
 
-  const resultsHtml = await response.text();
-  const rows = parseWrightSearchResultRows(resultsHtml);
-  return buildWrightParcelMatches(rows);
+  const byParcel = new Map<string, ParcelMatch>();
+  for (const strategy of strategies.slice(1)) {
+    const searchResult = await executeWrightAddressSearch({
+      jar,
+      formFields,
+      searchFields: strategy.fields,
+      fallbackSitusAddress: request.formattedAddress
+    });
+    formFields = searchResult.nextFormFields;
+
+    for (const match of searchResult.matches) {
+      const key = match.parcelId || `${match.objectId}`;
+      if (!key || byParcel.has(key)) {
+        continue;
+      }
+      byParcel.set(key, match);
+    }
+  }
+
+  return Array.from(byParcel.values());
 }
 
 async function searchWrightByLocation(
