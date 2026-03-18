@@ -706,15 +706,21 @@ export const wrightCountyTaxProvider: CountyTaxProvider = {
   canHandle: (county) =>
     normalizeCountyName(county)?.toUpperCase() === "WRIGHT",
   async searchProperty(request) {
+    let locationSearchError: unknown = null;
+
     try {
       const locationMatches = await searchWrightByLocation(request);
       if (locationMatches.length > 0) {
         return locationMatches;
       }
+    } catch (error) {
+      locationSearchError = error;
+    }
 
+    try {
       return await searchWrightByAddress(request);
     } catch (error) {
-      const failure = classifyMetroProviderFailure(error);
+      const failure = classifyMetroProviderFailure(error ?? locationSearchError);
       throw new MetroProviderError({
         kind:
           failure.kind === "tls_certificate_validation"
@@ -724,7 +730,7 @@ export const wrightCountyTaxProvider: CountyTaxProvider = {
               : "network_error",
         code: failure.code,
         message: `County request failed for Wright: ${failure.message}`,
-        cause: error
+        cause: error ?? locationSearchError
       });
     }
   },
