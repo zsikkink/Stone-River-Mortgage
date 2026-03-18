@@ -979,6 +979,49 @@ export function DailyPricingPage() {
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    County Performance by Unique PDF Address
+                  </h3>
+                  {analytics &&
+                  Object.keys(analytics.countyPerformanceByUniqueAddress).length > 0 ? (
+                    <ul className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                      {Object.entries(analytics.countyPerformanceByUniqueAddress)
+                        .sort(([leftCounty], [rightCounty]) =>
+                          leftCounty.localeCompare(rightCounty)
+                        )
+                        .map(([county, rates]) => (
+                          <li
+                            key={county}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          >
+                            <p className="font-medium text-slate-900">
+                              {county} ({rates.totalUniqueAddresses} unique)
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              {analytics.currentYear}:{" "}
+                              {(rates.currentYearRate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              {analytics.previousYear}:{" "}
+                              {(rates.previousYearRate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              Older: {(rates.olderYearRate * 100).toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-700">
+                              Fail: {(rates.failedRate * 100).toFixed(1)}%
+                            </p>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-600">
+                      No successful PDF activity yet.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">
@@ -1023,49 +1066,6 @@ export function DailyPricingPage() {
                         </tbody>
                       </table>
                     </div>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-600">
-                      No successful PDF activity yet.
-                    </p>
-                  )}
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    County Performance by Unique PDF Address
-                  </h3>
-                  {analytics &&
-                  Object.keys(analytics.countyPerformanceByUniqueAddress).length > 0 ? (
-                    <ul className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                      {Object.entries(analytics.countyPerformanceByUniqueAddress)
-                        .sort(([leftCounty], [rightCounty]) =>
-                          leftCounty.localeCompare(rightCounty)
-                        )
-                        .map(([county, rates]) => (
-                          <li
-                            key={county}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                          >
-                            <p className="font-medium text-slate-900">
-                              {county} ({rates.totalUniqueAddresses} unique)
-                            </p>
-                            <p className="text-xs text-slate-700">
-                              {analytics.currentYear}:{" "}
-                              {(rates.currentYearRate * 100).toFixed(1)}%
-                            </p>
-                            <p className="text-xs text-slate-700">
-                              {analytics.previousYear}:{" "}
-                              {(rates.previousYearRate * 100).toFixed(1)}%
-                            </p>
-                            <p className="text-xs text-slate-700">
-                              Older: {(rates.olderYearRate * 100).toFixed(1)}%
-                            </p>
-                            <p className="text-xs text-slate-700">
-                              Fail: {(rates.failedRate * 100).toFixed(1)}%
-                            </p>
-                          </li>
-                        ))}
-                    </ul>
                   ) : (
                     <p className="mt-3 text-sm text-slate-600">
                       No successful PDF activity yet.
