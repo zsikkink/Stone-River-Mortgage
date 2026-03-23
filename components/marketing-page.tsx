@@ -360,6 +360,66 @@ function formatDownPaymentForFilename(percent: number): string {
   return `${valueText}%`;
 }
 
+function resolveTransactionSummaryFormValues(params: {
+  purchasePriceInput: string;
+  downPaymentOption: DownPaymentOption;
+  customDownPaymentMode: CustomDownPaymentMode;
+  customDownPaymentPercentInput: string;
+  customDownPaymentAmountInput: string;
+}): {
+  purchasePrice: number;
+  downPaymentPercent: number;
+  downPaymentAmount: number;
+  loanAmount: number;
+} {
+  const purchasePrice = parseNumericInput(params.purchasePriceInput);
+
+  if (params.downPaymentOption === "custom") {
+    if (params.customDownPaymentMode === "amount") {
+      const downPaymentAmount = parseNumericInput(
+        params.customDownPaymentAmountInput
+      );
+      const downPaymentPercent =
+        purchasePrice > 0 ? (downPaymentAmount / purchasePrice) * 100 : Number.NaN;
+
+      return {
+        purchasePrice,
+        downPaymentPercent,
+        downPaymentAmount,
+        loanAmount: purchasePrice - downPaymentAmount
+      };
+    }
+
+    const downPaymentPercent = Number.parseFloat(
+      params.customDownPaymentPercentInput
+    );
+    const downPaymentAmount =
+      Number.isFinite(downPaymentPercent) && purchasePrice > 0
+        ? (purchasePrice * downPaymentPercent) / 100
+        : 0;
+
+    return {
+      purchasePrice,
+      downPaymentPercent,
+      downPaymentAmount,
+      loanAmount: purchasePrice - downPaymentAmount
+    };
+  }
+
+  const downPaymentPercent = Number.parseFloat(params.downPaymentOption);
+  const downPaymentAmount =
+    Number.isFinite(downPaymentPercent) && purchasePrice > 0
+      ? (purchasePrice * downPaymentPercent) / 100
+      : 0;
+
+  return {
+    purchasePrice,
+    downPaymentPercent,
+    downPaymentAmount,
+    loanAmount: purchasePrice - downPaymentAmount
+  };
+}
+
 function trimTrailingStreetSuffix(streetLine: string): string {
   const parts = streetLine.trim().split(/\s+/);
   if (parts.length < 2) {
@@ -437,21 +497,14 @@ export function MarketingPage() {
     null
   );
 
-  const downPaymentPercent = useMemo(() => {
-    if (downPaymentOption === "custom") {
-      if (customDownPaymentMode === "amount") {
-        const parsedPurchasePrice = parseNumericInput(purchasePrice);
-        const parsedCustomAmount = parseNumericInput(customDownPaymentAmount);
-        if (parsedPurchasePrice <= 0) {
-          return Number.NaN;
-        }
-        return (parsedCustomAmount / parsedPurchasePrice) * 100;
-      }
-
-      return Number.parseFloat(customDownPaymentPercent);
-    }
-
-    return Number.parseFloat(downPaymentOption);
+  const resolvedTransactionSummaryFormValues = useMemo(() => {
+    return resolveTransactionSummaryFormValues({
+      purchasePriceInput: purchasePrice,
+      downPaymentOption,
+      customDownPaymentMode,
+      customDownPaymentPercentInput: customDownPaymentPercent,
+      customDownPaymentAmountInput: customDownPaymentAmount
+    });
   }, [
     customDownPaymentAmount,
     customDownPaymentMode,
@@ -460,24 +513,10 @@ export function MarketingPage() {
     purchasePrice
   ]);
 
-  const estimatedDownPaymentAmount = useMemo(() => {
-    if (downPaymentOption === "custom" && customDownPaymentMode === "amount") {
-      return parseNumericInput(customDownPaymentAmount);
-    }
-
-    const parsedPurchasePrice = parseNumericInput(purchasePrice);
-    return (
-      (parsedPurchasePrice *
-        (Number.isFinite(downPaymentPercent) ? downPaymentPercent : 0)) /
-      100
-    );
-  }, [
-    customDownPaymentAmount,
-    customDownPaymentMode,
-    downPaymentOption,
-    downPaymentPercent,
-    purchasePrice
-  ]);
+  const downPaymentPercent =
+    resolvedTransactionSummaryFormValues.downPaymentPercent;
+  const estimatedDownPaymentAmount =
+    resolvedTransactionSummaryFormValues.downPaymentAmount;
 
   useEffect(() => {
     return () => {
@@ -687,10 +726,17 @@ export function MarketingPage() {
     parsedDownPaymentPercent: number;
   } => {
     const formErrors: FormErrors = {};
-    const parsedPurchasePrice = parseNumericInput(purchasePrice);
-    const parsedDownPaymentPercent = Number.isFinite(downPaymentPercent)
-      ? downPaymentPercent
-      : Number.NaN;
+    const {
+      purchasePrice: parsedPurchasePrice,
+      downPaymentPercent: parsedDownPaymentPercent,
+      loanAmount: parsedLoanAmount
+    } = resolveTransactionSummaryFormValues({
+      purchasePriceInput: purchasePrice,
+      downPaymentOption,
+      customDownPaymentMode,
+      customDownPaymentPercentInput: customDownPaymentPercent,
+      customDownPaymentAmountInput: customDownPaymentAmount
+    });
 
     if (!address.trim() || !selectedPlaceId || !verifiedAddress) {
       formErrors.address =
@@ -721,9 +767,6 @@ export function MarketingPage() {
     }
 
     if (!formErrors.purchasePrice && !formErrors.downPaymentPercent) {
-      const parsedLoanAmount =
-        parsedPurchasePrice -
-        (parsedPurchasePrice * parsedDownPaymentPercent) / 100;
       const loanBoundsMessage = getLoanAmountBoundsMessage(parsedLoanAmount);
 
       if (loanBoundsMessage) {
@@ -853,9 +896,20 @@ export function MarketingPage() {
       });
 
       if (!response.ok) {
-        const errorPayload = (await response.json()) as { error?: string };
+        const errorPayload = (await response.json()) as {
+          error?: string;
+          issues?: string[];
+        };
+        const issues = Array.isArray(errorPayload.issues)
+          ? errorPayload.issues.filter(
+              (issue): issue is string =>
+                typeof issue === "string" && issue.trim().length > 0
+            )
+          : [];
         throw new Error(
-          errorPayload.error || "Unable to generate the transaction summary PDF."
+          issues.length > 0
+            ? issues.join(" ")
+            : errorPayload.error || "Unable to generate the transaction summary PDF."
         );
       }
 
