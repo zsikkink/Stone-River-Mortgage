@@ -1,5 +1,7 @@
 "use client";
 
+import { toCustomerFacingPublicPageError } from "@/lib/public-error-messages";
+
 type GlobalErrorProps = {
   error: Error & { digest?: string };
   reset: () => void;
@@ -11,10 +13,10 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
       <body className="bg-softWhite text-slate-900 antialiased">
         <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center px-6 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Application error
+            Something went wrong
           </h1>
           <p className="mt-3 text-sm text-slate-600">
-            {error.message || "A critical error occurred. Please try again."}
+            {toCustomerFacingPublicPageError(error.message)}
           </p>
           <button
             type="button"

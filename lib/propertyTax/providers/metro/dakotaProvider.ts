@@ -119,17 +119,7 @@ export function parseDakotaAnnualTaxFromPdf(pdfBytes: Uint8Array): {
     .filter((year) => Number.isFinite(year));
   const payableYear = statementYear ?? payableYears.sort((left, right) => right - left)[0] ?? null;
 
-  const mnRefundLineMatch = joinedText.match(
-    /2\.\s*Use this amount for the special property tax refund on schedule 1 on Form M1PR\.[^$]*\$([0-9,]+\.\d{2})/i
-  );
-  const mnRefundAmount = parseCurrency(mnRefundLineMatch?.[1]);
-  if (mnRefundAmount !== null) {
-    return {
-      payableYear,
-      annualTax: mnRefundAmount,
-      evidenceLine: mnRefundLineMatch?.[0] ?? null
-    };
-  }
+  let evidenceLine: string | null = null;
 
   const line14Match = joinedText.match(
     /14\.\s*Your Total Property Tax and Special Assessments[^$]*\$([0-9,]+\.\d{2})(?:[^$]*\$([0-9,]+\.\d{2}))?/i
@@ -139,7 +129,8 @@ export function parseDakotaAnnualTaxFromPdf(pdfBytes: Uint8Array): {
     const firstAmount = parseCurrency(line14Match[1]);
     const secondAmount = parseCurrency(line14Match[2]);
     const annualTax = secondAmount ?? firstAmount;
-    if (annualTax !== null) {
+    evidenceLine = line14Match[0];
+    if (annualTax !== null && annualTax > 0) {
       return {
         payableYear,
         annualTax,
@@ -152,11 +143,38 @@ export function parseDakotaAnnualTaxFromPdf(pdfBytes: Uint8Array): {
     /Total\s+Property\s+Tax[^$]*\$([0-9,]+\.\d{2})/i
   );
   const annualTax = parseCurrency(totalTaxMatch?.[1]);
+  if (totalTaxMatch) {
+    evidenceLine = totalTaxMatch[0];
+  }
+
+  if (annualTax !== null && annualTax > 0) {
+    return {
+      payableYear,
+      annualTax,
+      evidenceLine: totalTaxMatch?.[0] ?? evidenceLine
+    };
+  }
+
+  const mnRefundLineMatch = joinedText.match(
+    /2\.\s*Use this amount for the special property tax refund on schedule 1 on Form M1PR\.[^$]*\$([0-9,]+\.\d{2})/i
+  );
+  const mnRefundAmount = parseCurrency(mnRefundLineMatch?.[1]);
+  if (mnRefundLineMatch) {
+    evidenceLine = evidenceLine ?? mnRefundLineMatch[0];
+  }
+
+  if (mnRefundAmount !== null && mnRefundAmount > 0) {
+    return {
+      payableYear,
+      annualTax: mnRefundAmount,
+      evidenceLine: mnRefundLineMatch?.[0] ?? evidenceLine
+    };
+  }
 
   return {
     payableYear,
-    annualTax,
-    evidenceLine: totalTaxMatch?.[0] ?? null
+    annualTax: null,
+    evidenceLine
   };
 }
 
@@ -193,7 +211,11 @@ async function fetchDakotaTaxObservation(args: {
   if (currentStatementResponse.ok) {
     const pdfBytes = new Uint8Array(await currentStatementResponse.arrayBuffer());
     const parsed = parseDakotaAnnualTaxFromPdf(pdfBytes);
-    if (typeof parsed.annualTax === "number" && Number.isFinite(parsed.annualTax)) {
+    if (
+      typeof parsed.annualTax === "number" &&
+      Number.isFinite(parsed.annualTax) &&
+      parsed.annualTax > 0
+    ) {
       const taxYear = parsed.payableYear ?? args.requestTaxYear;
       const yearMatched = taxYear === args.requestTaxYear;
 
@@ -256,7 +278,11 @@ async function fetchDakotaTaxObservation(args: {
 
   const pdfBytes = new Uint8Array(await pdfResponse.arrayBuffer());
   const parsed = parseDakotaAnnualTaxFromPdf(pdfBytes);
-  if (typeof parsed.annualTax !== "number" || !Number.isFinite(parsed.annualTax)) {
+  if (
+    typeof parsed.annualTax !== "number" ||
+    !Number.isFinite(parsed.annualTax) ||
+    parsed.annualTax <= 0
+  ) {
     return null;
   }
 

@@ -725,10 +725,93 @@ endstream
 
     expect(result.result_type).toBe("county_retrieved");
     expect(result.source_kind).toBe("county_statement");
-    expect(result.annual_property_tax).toBe(5338);
+    expect(result.annual_property_tax).toBe(5499.58);
     expect(result.actual_tax_year_used).toBe(2025);
     expect(result.year_match_status).toBe("matched");
     expect(result.source_url).toContain("TaxStatement_PDF.aspx?Id=228205301010");
+  });
+
+  it("falls back to estimate when Dakota statement parse only finds a zero-dollar refund amount", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.includes("Parcels2025DakotaPoints") && url.includes("where=1%3D1")) {
+        return new Response(
+          JSON.stringify({
+            features: [
+              {
+                attributes: {
+                  OBJECTID: 9901,
+                  COUNTY_PIN: "341126401050",
+                  STATE_PIN: "27037-341126401050",
+                  TAX_YEAR: 2025,
+                  TOTAL_TAX: 0,
+                  ANUMBER: 1053,
+                  ST_NAME: "Aster",
+                  ST_POS_TYP: "Blvd",
+                  POSTCOMM: "Rosemount",
+                  ZIP: "55068",
+                  CO_NAME: "Dakota"
+                },
+                geometry: {
+                  x: -93.0823,
+                  y: 44.7277
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (
+        url.includes("propertysearch.co.dakota.mn.us/PropertyInformationOnline/TaxStatement_PDF.aspx") &&
+        url.includes("Id=341126401050")
+      ) {
+        return new Response(
+          Buffer.from(
+            `
+stream
+BT
+(2026 Property Tax Statement)Tj
+(Payable 2026)Tj
+(2.  Use this amount for the special property tax refund on schedule 1 on Form M1PR.)Tj
+($0.00)Tj
+ET
+endstream
+`,
+            "latin1"
+          ),
+          { status: 200, headers: { "Content-Type": "application/pdf" } }
+        );
+      }
+
+      if (url.includes("propertysearch.co.dakota.mn.us/PropertyInformationOnline/TaxStatementHistory.aspx")) {
+        return new Response("<html><body>No statements</body></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" }
+        });
+      }
+
+      return new Response(JSON.stringify({ features: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+
+    const result = await getAnnualPropertyTax({
+      formattedAddress: "1053 Aster Blvd, Rosemount, MN 55068",
+      county: "Dakota County",
+      state: "MN",
+      lat: 44.7277,
+      lng: -93.0823,
+      purchasePrice: 590000,
+      taxYear: 2026
+    });
+
+    expect(result.result_type).toBe("estimated");
+    expect(result.source_kind).toBe("county_rate_table");
+    expect(result.annual_property_tax).toBe(7080);
   });
 
   it("falls back to estimate for metro county when provider is unresolved", async () => {

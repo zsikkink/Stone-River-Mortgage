@@ -3,6 +3,10 @@
 import { FormEvent, useMemo, useState } from "react";
 import { MAX_LOAN_AMOUNT, MIN_LOAN_AMOUNT } from "@/lib/constants";
 import { getLoanAmountBoundsMessage } from "@/lib/loanAmount";
+import {
+  toCustomerFacingTitlePremiumError,
+  toCustomerFacingTitlePremiumIssues
+} from "@/lib/public-error-messages";
 import type {
   BreakdownLine,
   TitlePremiumOutput
@@ -149,7 +153,9 @@ export function TitlePremiumCalculator() {
 
       if (!response.ok) {
         const payload = (await response.json()) as ApiErrorPayload;
-        setErrorIssues(parseIssueMessages(payload));
+        setErrorIssues(
+          toCustomerFacingTitlePremiumIssues(parseIssueMessages(payload))
+        );
         throw new Error(payload.error || "Unable to calculate title premiums.");
       }
 
@@ -158,7 +164,7 @@ export function TitlePremiumCalculator() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to calculate premiums.";
-      setErrorMessage(message);
+      setErrorMessage(toCustomerFacingTitlePremiumError(message));
       setResult(null);
     } finally {
       setLoading(false);
@@ -253,7 +259,7 @@ export function TitlePremiumCalculator() {
 
         {loanBoundsMessage ? (
           <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-            {loanBoundsMessage}
+            {toCustomerFacingTitlePremiumError(loanBoundsMessage)}
           </p>
         ) : null}
 

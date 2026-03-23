@@ -1,5 +1,7 @@
 "use client";
 
+import { toCustomerFacingPublicPageError } from "@/lib/public-error-messages";
+
 type ErrorProps = {
   error: Error & { digest?: string };
   reset: () => void;
@@ -12,7 +14,7 @@ export default function Error({ error, reset }: ErrorProps) {
         Something went wrong
       </h1>
       <p className="mt-3 text-sm text-slate-600">
-        {error.message || "An unexpected error occurred while loading this page."}
+        {toCustomerFacingPublicPageError(error.message)}
       </p>
       <button
         type="button"

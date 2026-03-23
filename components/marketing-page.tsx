@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { MINNESOTA_ADDRESS_ONLY_MESSAGE } from "@/lib/constants";
 import { getLoanAmountBoundsMessage } from "@/lib/loanAmount";
+import { toCustomerFacingTransactionSummaryError } from "@/lib/public-error-messages";
 
 const APPLY_URL =
   "https://www.blink.mortgage/app/signup/p/stonerivermortgagellc/mikesikkink?campaign=StoneRiverMortgage";
@@ -191,7 +192,7 @@ function PdfPreviewCanvas({
         }
 
         console.error("Failed to load PDF.js document preview.", error);
-        setRenderError("Unable to render the PDF preview.");
+        setRenderError("We couldn't display the PDF preview right now.");
         setIsRendering(false);
       }
     };
@@ -268,7 +269,7 @@ function PdfPreviewCanvas({
 
         console.error("Failed to render PDF.js page preview.", error);
         if (!disposed) {
-          setRenderError("Unable to render the PDF preview.");
+          setRenderError("We couldn't display the PDF preview right now.");
           setIsRendering(false);
         }
       }
@@ -713,7 +714,9 @@ export function MarketingPage() {
         error instanceof Error
           ? error.message
           : "Invalid address. Please select a valid address from suggestions.";
-      setAddressVerificationError(message);
+      setAddressVerificationError(
+        toCustomerFacingTransactionSummaryError(message)
+      );
       setSuppressAddressSuggestions(true);
     } finally {
       setIsVerifyingAddress(false);
@@ -740,30 +743,30 @@ export function MarketingPage() {
 
     if (!address.trim() || !selectedPlaceId || !verifiedAddress) {
       formErrors.address =
-        "Invalid address. Please select a valid address from suggestions.";
+        "Please select a verified Minnesota property address from the suggestions.";
     }
 
     if (
       !formErrors.address &&
       verifiedAddress?.state?.trim().toUpperCase() !== "MN"
     ) {
-      formErrors.address = MINNESOTA_ADDRESS_ONLY_MESSAGE;
+      formErrors.address = "Please enter a valid Minnesota property address.";
     }
 
     if (parsedPurchasePrice <= 0) {
-      formErrors.purchasePrice = "Purchase price must be greater than 0.";
+      formErrors.purchasePrice = "Please enter a purchase price greater than $0.";
     }
 
     if (!Number.isFinite(parsedDownPaymentPercent)) {
       formErrors.downPaymentPercent =
         downPaymentOption === "custom" && customDownPaymentMode === "amount"
-          ? "Down payment amount must be greater than 0 and less than purchase price."
-          : "Down payment percent must be greater than 0 and less than 100.";
+          ? "Please enter a down payment amount greater than $0 and less than the purchase price."
+          : "Please enter a down payment percentage greater than 0% and less than 100%.";
     } else if (parsedDownPaymentPercent <= 0 || parsedDownPaymentPercent >= 100) {
       formErrors.downPaymentPercent =
         downPaymentOption === "custom" && customDownPaymentMode === "amount"
-          ? "Down payment amount must be greater than 0 and less than purchase price."
-          : "Down payment percent must be greater than 0 and less than 100.";
+          ? "Please enter a down payment amount greater than $0 and less than the purchase price."
+          : "Please enter a down payment percentage greater than 0% and less than 100%.";
     }
 
     if (!formErrors.purchasePrice && !formErrors.downPaymentPercent) {
@@ -941,7 +944,7 @@ export function MarketingPage() {
         error instanceof Error
           ? error.message
           : "We couldn't generate your PDF right now. Please verify your entries and try again.";
-      setRequestError(message);
+      setRequestError(toCustomerFacingTransactionSummaryError(message));
     } finally {
       setIsSubmitting(false);
     }
@@ -960,7 +963,7 @@ export function MarketingPage() {
         const opened = window.open(previewUrl, "_blank", "noopener,noreferrer");
         if (!opened) {
           throw new Error(
-            "Unable to open the PDF for sharing. Please allow pop-ups and try again."
+            "We couldn't open the PDF for sharing. Please allow pop-ups and try again."
           );
         }
         return;
@@ -986,7 +989,9 @@ export function MarketingPage() {
       }
 
       setShareError(
-        error instanceof Error ? error.message : "Unable to share the PDF."
+        error instanceof Error && error.message
+          ? error.message
+          : "We couldn't share the PDF right now. Please try again."
       );
     }
   };

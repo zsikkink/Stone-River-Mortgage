@@ -44,7 +44,7 @@ endstream
     expect(parsed.evidenceLine).toContain("14. Your Total Property Tax and Special Assessments");
   });
 
-  it("prefers MN refund line amount when present on Dakota statement", () => {
+  it("prefers total property tax line when Dakota statement also includes an M1PR refund line", () => {
     const pdfLikeText = `
 stream
 BT
@@ -62,7 +62,25 @@ endstream
     const parsed = parseDakotaAnnualTaxFromPdf(Buffer.from(pdfLikeText, "latin1"));
 
     expect(parsed.payableYear).toBe(2025);
-    expect(parsed.annualTax).toBe(5338);
+    expect(parsed.annualTax).toBe(5499.58);
+    expect(parsed.evidenceLine).toContain("Total Property Tax and Special Assessments");
+  });
+
+  it("returns null when Dakota statement only exposes a zero-dollar refund line", () => {
+    const pdfLikeText = `
+stream
+BT
+(2026 Property Tax Statement)Tj
+(Payable 2026)Tj
+(2.  Use this amount for the special property tax refund on schedule 1 on Form M1PR.)Tj
+($0.00)Tj
+ET
+endstream
+`;
+    const parsed = parseDakotaAnnualTaxFromPdf(Buffer.from(pdfLikeText, "latin1"));
+
+    expect(parsed.payableYear).toBe(2026);
+    expect(parsed.annualTax).toBeNull();
     expect(parsed.evidenceLine).toContain("special property tax refund");
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toCustomerFacingAddressAutocompleteError } from "@/lib/public-error-messages";
 
 type AddressSelection = {
   placeId: string;
@@ -99,7 +100,7 @@ export function AddressAutocomplete({
         if (!response.ok) {
           setSuggestions([]);
           setSuggestionError(
-            payload?.error || "Unable to load address suggestions."
+            toCustomerFacingAddressAutocompleteError(payload?.error)
           );
           return;
         }
@@ -113,7 +114,9 @@ export function AddressAutocomplete({
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           setSuggestions([]);
-          setSuggestionError("Unable to load address suggestions.");
+          setSuggestionError(
+            toCustomerFacingAddressAutocompleteError(null)
+          );
         }
       } finally {
         setLoadingSuggestions(false);
